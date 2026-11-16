@@ -16,6 +16,10 @@ import { useConfig } from '../../../../hooks/useConfig';
 import { store } from '../../../../utils/store';
 import { osType } from '../../../../utils/env';
 import { invoke } from '@tauri-apps/api';
+import { fetch as httpFetch } from '@tauri-apps/api/http';
+import { modelsUrlFrom } from '../../../../services/translate/openai/utils';
+
+const NON_CHAT_MODEL = /(embed|whisper|tts|dall-?e|moderation|rerank)/i;
 
 export default function Translate() {
     const [sourceLanguage, setSourceLanguage] = useConfig('translate_source_language', 'auto');
@@ -38,14 +42,26 @@ export default function Translate() {
     const [alwaysOnTop, setAlwaysOnTop] = useConfig('translate_always_on_top', false);
     const [translateServiceInstanceList] = useConfig('translate_service_list', []);
     const [overlayService, setOverlayService] = useConfig('overlay_service_instance', '');
+    const [overlayModel, setOverlayModel] = useConfig('overlay_model', '');
     const [overlayTargetLanguage, setOverlayTargetLanguage] = useConfig('overlay_target_language', '');
     const [overlayOpacity, setOverlayOpacity] = useConfig('overlay_opacity', 0.85);
     const [overlayFontScale, setOverlayFontScale] = useConfig('overlay_font_scale', 1);
     const [overlayConcurrency, setOverlayConcurrency] = useConfig('overlay_max_concurrency', 3);
     const [overlayRefreshHotkey] = useConfig('hotkey_overlay_refresh', '');
     const [instanceNames, setInstanceNames] = useState({});
+    const [overlayServiceConfig, setOverlayServiceConfig] = useState(null);
+    const [overlayModelList, setOverlayModelList] = useState([]);
+    const [fetchingOverlayModels, setFetchingOverlayModels] = useState(false);
+    const [overlayModelError, setOverlayModelError] = useState('');
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const effectiveOverlayService =
+        overlayService || (translateServiceInstanceList ?? [])[0] || '';
+    const overlayServiceName = effectiveOverlayService.split('@')[0];
+    const overlayModelVisible =
+        overlayServiceConfig !== null &&
+        overlayServiceConfig.service !== 'azure' &&
+        (overlayServiceName === 'openai' || overlayServiceConfig.service === 'openai');
 
     useEffect(() => {
         let disposed = false;
@@ -63,6 +79,58 @@ export default function Translate() {
             disposed = true;
         };
     }, [translateServiceInstanceList]);
+
+    useEffect(() => {
+        let disposed = false;
+        (async () => {
+            const config = effectiveOverlayService
+                ? (await store.get(effectiveOverlayService)) ?? {}
+                : {};
+            if (!disposed) {
+                setOverlayServiceConfig(config);
+                setOverlayModelList(Array.isArray(config.modelList) ? config.modelList : []);
+                setOverlayModelError('');
+            }
+        })();
+        return () => {
+            disposed = true;
+        };
+    }, [effectiveOverlayService, translateServiceInstanceList]);
+
+    const fetchOverlayModels = async () => {
+        const config = overlayServiceConfig ?? {};
+        if (!config.requestPath || !config.apiKey) {
+            setOverlayModelError(t('config.translate.overlay_model_need_config'));
+            return;
+        }
+        setFetchingOverlayModels(true);
+        setOverlayModelError('');
+        try {
+            const res = await httpFetch(modelsUrlFrom(config.requestPath), {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${config.apiKey}`,
+                },
+                timeout: 15,
+            });
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const data = res.data ?? {};
+            const rawList = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
+            const list = rawList
+                .map((item) => (typeof item === 'string' ? item : item?.id ?? item?.name))
+                .filter((item) => typeof item === 'string' && item !== '');
+            if (list.length === 0) {
+                throw new Error(t('config.translate.overlay_model_empty'));
+            }
+            setOverlayModelList(list);
+        } catch (e) {
+            setOverlayModelError(e?.toString?.() ?? String(e));
+        } finally {
+            setFetchingOverlayModels(false);
+        }
+    };
 
     return (
         <>
@@ -383,6 +451,9 @@ export default function Translate() {
                                         className='max-h-[50vh] overflow-y-auto'
                                         onAction={(key) => {
                                             setOverlayService(key === 'follow' ? '' : key);
+                                            setOverlayModel('');
+                                            setOverlayModelList([]);
+                                            setOverlayModelError('');
                                         }}
                                     >
                                         <DropdownItem key='follow'>
@@ -397,6 +468,69 @@ export default function Translate() {
                                 </Dropdown>
                             )}
                         </div>
+                        {overlayModelVisible && (
+                            <div className='config-item'>
+                                <h3 className='my-auto mx-0'>{t('config.translate.overlay_model')}</h3>
+                                {overlayModel !== null && (
+                                    <div className='flex flex-wrap items-center gap-2 w-[70%]'>
+                                        <Input
+                                            value={overlayModel}
+                                            variant='bordered'
+                                            placeholder={
+                                                overlayServiceConfig?.model ||
+                                                t('config.translate.overlay_model_follow')
+                                            }
+                                            onValueChange={(value) => setOverlayModel(value)}
+                                        />
+                                        <Dropdown>
+                                            <DropdownTrigger>
+                                                <Button
+                                                    variant='bordered'
+                                                    isDisabled={overlayModelList.length === 0}
+                                                >
+                                                    {t('config.translate.overlay_model_select')}
+                                                </Button>
+                                            </DropdownTrigger>
+                                            <DropdownMenu
+                                                aria-label='overlay model'
+                                                className='max-h-[40vh] overflow-y-auto'
+                                                onAction={(key) => setOverlayModel(key === 'follow' ? '' : key)}
+                                            >
+                                                <DropdownItem key='follow'>
+                                                    {t('config.translate.overlay_model_follow')}
+                                                </DropdownItem>
+                                                {overlayModelList.map((model) => (
+                                                    <DropdownItem
+                                                        key={model}
+                                                        isDisabled={NON_CHAT_MODEL.test(model)}
+                                                    >
+                                                        {model}
+                                                        {NON_CHAT_MODEL.test(model) && (
+                                                            <span className='ml-2 text-default-400'>
+                                                                {t('services.translate.openai.non_chat_model')}
+                                                            </span>
+                                                        )}
+                                                    </DropdownItem>
+                                                ))}
+                                            </DropdownMenu>
+                                        </Dropdown>
+                                        <Button
+                                            variant='bordered'
+                                            isLoading={fetchingOverlayModels}
+                                            onPress={fetchOverlayModels}
+                                        >
+                                            {t('config.translate.overlay_model_fetch')}
+                                        </Button>
+                                    </div>
+                                )}
+                                <p className='text-[11px] text-default-500'>
+                                    {t('config.translate.overlay_model_hint')}
+                                </p>
+                                {overlayModelError !== '' && (
+                                    <p className='text-[11px] text-red-500'>{overlayModelError}</p>
+                                )}
+                            </div>
+                        )}
                         <div className='config-item'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_target_language')}</h3>
                             {overlayTargetLanguage !== null && (

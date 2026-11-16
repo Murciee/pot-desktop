@@ -58,10 +58,13 @@ async function getPluginInfo(serviceName) {
     return pluginInfoCache.get(serviceName);
 }
 
-async function doTranslate(instanceKey, text, from, to, detectLang) {
+async function doTranslate(instanceKey, text, from, to, detectLang, model) {
     await ensureStore();
     const serviceName = getServiceName(instanceKey);
-    const config = (await store.get(instanceKey)) ?? {};
+    let config = (await store.get(instanceKey)) ?? {};
+    if (model && model.trim() !== '') {
+        config = { ...config, model: model.trim() };
+    }
 
     if (whetherPluginService(instanceKey)) {
         const pluginInfo = await getPluginInfo(serviceName);
@@ -95,13 +98,13 @@ async function doTranslate(instanceKey, text, from, to, detectLang) {
  * Translate one text block with a builtin or plugin translate service instance.
  * Results are cached in memory by instance + languages + text.
  */
-export async function translateWithService(instanceKey, text, from, to, detectLang = from) {
-    const key = `${instanceKey}\u0000${from}\u0000${to}\u0000${text}`;
+export async function translateWithService(instanceKey, text, from, to, detectLang = from, model = '') {
+    const key = `${instanceKey}\u0000${from}\u0000${to}\u0000${model}\u0000${text}`;
     if (cache.has(key)) {
         return await cache.get(key);
     }
 
-    const promise = doTranslate(instanceKey, text, from, to, detectLang);
+    const promise = doTranslate(instanceKey, text, from, to, detectLang, model);
     cache.set(key, promise);
     try {
         const result = await promise;

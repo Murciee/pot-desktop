@@ -448,6 +448,7 @@ pub struct OverlayState {
     pub padding_top: u32,
     pub ocr_lang: String,
     pub service: String,
+    pub model: String,
     pub target_lang: String,
 }
 
@@ -509,6 +510,7 @@ pub fn overlay_translate() {
                 padding_top: rect.padding_top,
                 ocr_lang: overlay_ocr_lang(),
                 service: overlay_service_instance(),
+                model: overlay_model(),
                 target_lang: overlay_target_language(),
             };
             info!("Overlay rect: {:?}", state);
@@ -644,6 +646,12 @@ fn overlay_service_instance() -> String {
     }
     get("translate_service_list")
         .and_then(|v| v.as_array().and_then(|list| list.first().cloned()))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_default()
+}
+
+fn overlay_model() -> String {
+    get("overlay_model")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_default()
 }

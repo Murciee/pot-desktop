@@ -150,7 +150,8 @@ export default function Overlay() {
                         block.text,
                         'auto',
                         overlayState.targetLang,
-                        'auto'
+                        'auto',
+                        overlayState.model
                     );
                     if (disposedRef.current) {
                         return;

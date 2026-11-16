@@ -1,6 +1,6 @@
 import { Input, Button, Switch, Textarea } from '@nextui-org/react';
 import { DropdownTrigger } from '@nextui-org/react';
-import { MdDeleteOutline } from 'react-icons/md';
+import { MdDeleteOutline, MdVisibility, MdVisibilityOff } from 'react-icons/md';
 import { DropdownMenu } from '@nextui-org/react';
 import { DropdownItem } from '@nextui-org/react';
 import toast, { Toaster } from 'react-hot-toast';
@@ -55,6 +55,7 @@ export function Config(props) {
     const [fetchingModels, setFetchingModels] = useState(false);
     const [advanced, setAdvanced] = useState(false);
     const [testResult, setTestResult] = useState(null);
+    const [showKey, setShowKey] = useState(false);
 
     // 兼容旧版本
     useEffect(() => {
@@ -108,11 +109,6 @@ export function Config(props) {
     };
 
     const currentPreset = PRESETS.find((item) => item.url === openaiConfig?.requestPath);
-
-    const filteredModels = (openaiConfig?.modelList ?? []).filter((model) => {
-        const keyword = (openaiConfig?.model ?? '').trim().toLowerCase();
-        return keyword === '' || model.toLowerCase().includes(keyword);
-    });
 
     const handleFetchModels = async () => {
         if (!openaiConfig.apiKey) {
@@ -302,7 +298,7 @@ export function Config(props) {
                     <Input
                         label={t('services.translate.openai.api_key')}
                         labelPlacement='outside-left'
-                        type='password'
+                        type={showKey ? 'text' : 'password'}
                         value={openaiConfig['apiKey']}
                         variant='bordered'
                         classNames={{
@@ -310,6 +306,19 @@ export function Config(props) {
                             label: 'text-[length:--nextui-font-size-medium]',
                             mainWrapper: 'max-w-[50%]',
                         }}
+                        endContent={
+                            <Button
+                                isIconOnly
+                                size='sm'
+                                type='button'
+                                variant='light'
+                                aria-label={showKey ? t('services.translate.openai.hide_key') : t('services.translate.openai.show_key')}
+                                title={showKey ? t('services.translate.openai.hide_key') : t('services.translate.openai.show_key')}
+                                onPress={() => setShowKey((value) => !value)}
+                            >
+                                {showKey ? <MdVisibilityOff size={18} /> : <MdVisibility size={18} />}
+                            </Button>
+                        }
                         onValueChange={(value) => {
                             invalidateModels({ apiKey: value });
                         }}
@@ -331,6 +340,43 @@ export function Config(props) {
                                 updateConfig({ model: value });
                             }}
                         />
+                        <Dropdown>
+                            <DropdownTrigger>
+                                <Button
+                                    variant='bordered'
+                                    isDisabled={(openaiConfig.modelList ?? []).length === 0}
+                                >
+                                    {t('services.translate.openai.model_select')}
+                                </Button>
+                            </DropdownTrigger>
+                            <DropdownMenu
+                                aria-label='model list'
+                                className='max-h-[40vh] overflow-y-auto'
+                                onAction={(key) => {
+                                    const model = String(key);
+                                    if (!NON_CHAT_MODEL.test(model)) {
+                                        updateConfig({ model });
+                                    }
+                                }}
+                            >
+                                {(openaiConfig.modelList ?? []).map((model) => {
+                                    const nonChat = NON_CHAT_MODEL.test(model);
+                                    return (
+                                        <DropdownItem
+                                            key={model}
+                                            isDisabled={nonChat}
+                                        >
+                                            <span className='break-all'>{model}</span>
+                                            {nonChat && (
+                                                <span className='ml-2 text-default-400'>
+                                                    {t('services.translate.openai.non_chat_model')}
+                                                </span>
+                                            )}
+                                        </DropdownItem>
+                                    );
+                                })}
+                            </DropdownMenu>
+                        </Dropdown>
                         <Button
                             variant='bordered'
                             isLoading={fetchingModels}
@@ -340,54 +386,6 @@ export function Config(props) {
                         </Button>
                     </div>
                 </div>
-                {(openaiConfig.modelList ?? []).length > 0 && openaiConfig.service !== 'azure' && (
-                    <div className='bg-content2 rounded-[10px] p-2 max-h-[180px] overflow-y-auto'>
-                        <div className='flex justify-between px-2 pb-1 text-[10px] text-default-500'>
-                            <span>
-                                {t('services.translate.openai.models_count', {
-                                    count: openaiConfig.modelList.length,
-                                })}
-                            </span>
-                            <span>
-                                {openaiConfig.modelListUpdatedAt
-                                    ? t('services.translate.openai.models_updated', {
-                                          time: new Date(openaiConfig.modelListUpdatedAt).toLocaleTimeString(),
-                                      })
-                                    : ''}
-                            </span>
-                        </div>
-                        {filteredModels.length === 0 && (
-                            <div className='px-2 py-1 text-[12px] text-default-500'>
-                                {t('services.translate.openai.models_no_match')}
-                            </div>
-                        )}
-                        {filteredModels.map((model) => {
-                            const nonChat = NON_CHAT_MODEL.test(model);
-                            return (
-                                <div
-                                    key={model}
-                                    className={`flex justify-between items-center px-2 py-1 rounded-[6px] text-[12px] ${
-                                        nonChat
-                                            ? 'text-default-400 cursor-not-allowed'
-                                            : 'cursor-pointer hover:bg-content3'
-                                    } ${openaiConfig.model === model ? 'bg-content3' : ''}`}
-                                    onClick={() => {
-                                        if (!nonChat) {
-                                            updateConfig({ model });
-                                        }
-                                    }}
-                                >
-                                    <span className='break-all'>{model}</span>
-                                    {nonChat && (
-                                        <span className='ml-2 shrink-0'>
-                                            {t('services.translate.openai.non_chat_model')}
-                                        </span>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
                 <div className='config-item'>
                     <h3 className='my-auto'>{t('services.translate.openai.test_connection')}</h3>
                     <Button

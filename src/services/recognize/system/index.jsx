@@ -108,11 +108,71 @@ export async function recognize(_, lang) {
     }
 }
 
+const CJK_GAP = /([\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af])\s+(?=[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af])/g;
+const CJK_PUNCT_BEFORE = /([\u3000-\u303f\uff00-\uffef])\s+/g;
+const CJK_PUNCT_AFTER = /\s+([\u3000-\u303f\uff00-\uffef])/g;
+
+function normalizeOcrText(text) {
+    return String(text ?? '')
+        .replace(CJK_GAP, '$1')
+        .replace(CJK_PUNCT_BEFORE, '$1')
+        .replace(CJK_PUNCT_AFTER, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function normalizeOcrBoxes(boxes) {
+    return (boxes ?? []).map((box) => ({
+        ...box,
+        text: normalizeOcrText(box.text),
+    }));
+}
+
+function scoreOcrBoxes(boxes) {
+    const text = (boxes ?? []).map((box) => box.text).join(' ');
+    const cjk = (text.match(/[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) ?? []).length;
+    const latin = (text.match(/[A-Za-z0-9]/g) ?? []).length;
+    const cjkGaps = (text.match(/[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]\s+[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]/g) ?? []).length;
+    const replacement = (text.match(/\uFFFD/g) ?? []).length;
+    return cjk * 3 + latin - cjkGaps * 2 - replacement * 5;
+}
+
 export async function recognizeWithBoxes(lang) {
     if (osType !== 'Windows_NT') {
         throw new Error('only windows');
     }
-    return await invoke('system_ocr_boxes', { lang: windowsLangMap[lang] ?? 'auto' });
+
+    const language = windowsLangMap[lang] ?? 'auto';
+    if (language !== 'auto') {
+        return normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: language }));
+    }
+
+    // Windows' "auto" only uses the first installed user-profile language,
+    // which often picks an English engine for Chinese screenshots. Try the
+    // common OCR packs and keep the result with the most real characters.
+    const candidates = ['zh-CN', 'en-US', 'ja-JP', 'ko-KR'];
+    let best = null;
+    let bestScore = Number.NEGATIVE_INFINITY;
+    for (const candidate of candidates) {
+        try {
+            const boxes = normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: candidate }));
+            if (boxes.length === 0) {
+                continue;
+            }
+            const score = scoreOcrBoxes(boxes);
+            if (score > bestScore) {
+                best = boxes;
+                bestScore = score;
+            }
+        } catch {
+            // Language pack not installed; try the next one.
+        }
+    }
+    if (best !== null) {
+        return best;
+    }
+
+    return normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: 'auto' }));
 }
 
 export * from './Config';

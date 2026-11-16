@@ -5,9 +5,12 @@ import { convertFileSrc } from '@tauri-apps/api/tauri';
 import { appWindow } from '@tauri-apps/api/window';
 import { emit } from '@tauri-apps/api/event';
 import { warn } from 'tauri-plugin-log-api';
+import { sendNotification } from '@tauri-apps/api/notification';
+import { useTranslation } from 'react-i18next';
 import { invoke } from '@tauri-apps/api';
 
 export default function Screenshot() {
+    const { t } = useTranslation();
     const [imgurl, setImgurl] = useState('');
     const [isMoved, setIsMoved] = useState(false);
     const [isDown, setIsDown] = useState(false);
@@ -21,15 +24,25 @@ export default function Screenshot() {
     useEffect(() => {
         currentMonitor().then((monitor) => {
             const position = monitor.position;
-            invoke('screenshot', { x: position.x, y: position.y }).then(() => {
-                appCacheDir().then((appCacheDirPath) => {
-                    join(appCacheDirPath, 'pot_screenshot.png').then((filePath) => {
-                        setImgurl(convertFileSrc(filePath));
+            invoke('screenshot', { x: position.x, y: position.y }).then(
+                () => {
+                    appCacheDir().then((appCacheDirPath) => {
+                        join(appCacheDirPath, 'pot_screenshot.png').then((filePath) => {
+                            setImgurl(convertFileSrc(filePath));
+                        });
                     });
-                });
-            });
+                },
+                (e) => {
+                    warn(`Failed to capture screen: ${e}`);
+                    void sendNotification({
+                        title: t('overlay.capture_failed_title'),
+                        body: `${t('overlay.capture_failed_body')} ${e}`,
+                    }).catch(() => {});
+                    void appWindow.close();
+                }
+            );
         });
-    }, []);
+    }, [t]);
 
     return (
         <>
@@ -89,19 +102,30 @@ export default function Screenshot() {
                         warn('Screenshot area is too small');
                         await appWindow.close();
                     } else {
-                        await invoke('cut_image', { left, top, width, height });
-                        const monitor = await currentMonitor();
-                        await emit('overlay_rect', {
-                            left,
-                            top,
-                            width,
-                            height,
-                            dpr: dpi,
-                            screenX: monitor.position.x + left,
-                            screenY: monitor.position.y + top,
-                        });
-                        await emit('success');
-                        await appWindow.close();
+                        try {
+                            const cropInfo = await invoke('cut_image', { left, top, width, height });
+                            const monitor = await currentMonitor();
+                            await emit('overlay_rect', {
+                                left,
+                                top,
+                                width,
+                                height,
+                                dpr: dpi,
+                                screenX: monitor.position.x + left,
+                                screenY: monitor.position.y + top,
+                                paddingLeft: cropInfo.paddingLeft,
+                                paddingTop: cropInfo.paddingTop,
+                            });
+                            await emit('success');
+                            await appWindow.close();
+                        } catch (error) {
+                            warn(`Failed to crop screenshot: ${error}`);
+                            void sendNotification({
+                                title: t('overlay.capture_failed_title'),
+                                body: `${t('overlay.capture_failed_body')} ${error}`,
+                            }).catch(() => {});
+                            await appWindow.close();
+                        }
                     }
                 }}
             />

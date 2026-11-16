@@ -8,6 +8,13 @@ use serde_json::{json, Value};
 use std::io::Read;
 use tauri::Manager;
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CropInfo {
+    pub padding_left: u32,
+    pub padding_top: u32,
+}
+
 #[tauri::command]
 pub fn get_text(state: tauri::State<StringWrapper>) -> String {
     return state.0.lock().unwrap().to_string();
@@ -20,40 +27,34 @@ pub fn reload_store() {
     store.load().unwrap();
 }
 
-#[tauri::command]
-pub fn cut_image(
+/// Crop `pot_screenshot.png` with the same padding rules used by the UI.
+/// `scale_factor` is the DPI factor of the monitor the screenshot belongs to.
+pub fn cut_image_at(
     left: u32,
     top: u32,
     width: u32,
     height: u32,
-    window: tauri::Window,
-    app_handle: tauri::AppHandle,
-) {
+    scale_factor: f64,
+) -> Result<CropInfo, String> {
     use dirs::cache_dir;
     use image::GenericImage;
     info!("Cut image: {}x{}+{}+{}", width, height, left, top);
-    let mut app_cache_dir_path = cache_dir().expect("Get Cache Dir Failed");
+    let mut app_cache_dir_path = cache_dir().ok_or("Get Cache Dir Failed")?;
+    let app_handle = APP.get().ok_or("App handle not ready")?;
     app_cache_dir_path.push(&app_handle.config().tauri.bundle.identifier);
     app_cache_dir_path.push("pot_screenshot.png");
     if !app_cache_dir_path.exists() {
-        return;
+        return Err("pot_screenshot.png not found".to_string());
     }
-    let mut img = match image::open(&app_cache_dir_path) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("{:?}", e.to_string());
-            return;
-        }
-    };
+    let mut img = image::open(&app_cache_dir_path).map_err(|e| e.to_string())?;
     // Add a small padding so characters touching the selection edge are kept.
-    let padding = (8.0 * window.scale_factor().unwrap_or(1.0)).round() as u32;
+    let padding = (8.0 * scale_factor).round() as u32;
     let image_width = img.width();
     let image_height = img.height();
     let right = (left.saturating_add(width)).min(image_width);
     let bottom = (top.saturating_add(height)).min(image_height);
     if right <= left || bottom <= top {
-        error!("Invalid cut area after clamping");
-        return;
+        return Err("Invalid cut area after clamping".to_string());
     }
     let padded_left = left.saturating_sub(padding);
     let padded_top = top.saturating_sub(padding);
@@ -68,12 +69,30 @@ pub fn cut_image(
     let img2 = img.sub_image(padded_left, padded_top, padded_width, padded_height);
     app_cache_dir_path.pop();
     app_cache_dir_path.push("pot_screenshot_cut.png");
-    match img2.to_image().save(&app_cache_dir_path) {
-        Ok(_) => {}
-        Err(e) => {
-            error!("{:?}", e.to_string());
-        }
-    }
+    img2.to_image()
+        .save(&app_cache_dir_path)
+        .map_err(|e| e.to_string())?;
+    Ok(CropInfo {
+        padding_left: left - padded_left,
+        padding_top: top - padded_top,
+    })
+}
+
+#[tauri::command]
+pub fn cut_image(
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+    window: tauri::Window,
+) -> Result<CropInfo, String> {
+    cut_image_at(
+        left,
+        top,
+        width,
+        height,
+        window.scale_factor().unwrap_or(1.0),
+    )
 }
 
 #[tauri::command]

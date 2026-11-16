@@ -115,68 +115,14 @@ fn build_window(label: &str, title: &str) -> (Window, bool) {
     }
 }
 
-fn clamp_position(
-    monitor: &Monitor,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-) -> (f64, f64) {
-    let dpi = monitor.scale_factor();
-    let monitor_x = monitor.position().x as f64 / dpi;
-    let monitor_y = monitor.position().y as f64 / dpi;
-    let monitor_width = monitor.size().width as f64 / dpi;
-    let monitor_height = monitor.size().height as f64 / dpi;
-    let x = x
-        .max(monitor_x)
-        .min((monitor_x + monitor_width - width).max(monitor_x));
-    let y = y
-        .max(monitor_y)
-        .min((monitor_y + monitor_height - height).max(monitor_y));
-    (x, y)
-}
-
 pub fn config_window() {
-    let (window, exists) = build_window("config", "Config");
-    if exists {
-        return;
-    }
+    let (window, _exists) = build_window("config", "Config");
     window
         .set_min_size(Some(tauri::LogicalSize::new(800, 400)))
         .unwrap();
-    let monitor = window.current_monitor().unwrap().unwrap();
-    let dpi = monitor.scale_factor();
-    let max_width = monitor.size().width as f64 / dpi;
-    let max_height = monitor.size().height as f64 / dpi;
-    let width = (get("config_window_width")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(800) as f64)
-        .min(max_width);
-    let height = (get("config_window_height")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(600) as f64)
-        .min(max_height);
-    window
-        .set_size(tauri::LogicalSize::new(width, height))
-        .unwrap();
+    window.set_size(tauri::LogicalSize::new(800, 600)).unwrap();
 
-    match (
-        get("config_window_position_x").and_then(|v| v.as_i64()),
-        get("config_window_position_y").and_then(|v| v.as_i64()),
-    ) {
-        (Some(x), Some(y)) => {
-            let (x, y) = clamp_position(&monitor, x as f64, y as f64, width as f64, height as f64);
-            window
-                .set_position(tauri::PhysicalPosition::new(
-                    (x * dpi) as i32,
-                    (y * dpi) as i32,
-                ))
-                .unwrap();
-        }
-        _ => {
-            window.center().unwrap();
-        }
-    }
+    window.center().unwrap();
 }
 
 fn translate_window() -> Window {
@@ -378,28 +324,13 @@ pub fn recognize_window() {
     };
     let monitor = window.current_monitor().unwrap().unwrap();
     let dpi = monitor.scale_factor();
-    let width = (width as f64).min(monitor.size().width as f64 / dpi);
-    let height = (height as f64).min(monitor.size().height as f64 / dpi);
     window
-        .set_size(tauri::PhysicalSize::new(width * dpi, height * dpi))
+        .set_size(tauri::PhysicalSize::new(
+            (width as f64) * dpi,
+            (height as f64) * dpi,
+        ))
         .unwrap();
-    match (
-        get("recognize_window_position_x").and_then(|v| v.as_i64()),
-        get("recognize_window_position_y").and_then(|v| v.as_i64()),
-    ) {
-        (Some(x), Some(y)) => {
-            let (x, y) = clamp_position(&monitor, x as f64, y as f64, width as f64, height as f64);
-            window
-                .set_position(tauri::PhysicalPosition::new(
-                    (x * dpi) as i32,
-                    (y * dpi) as i32,
-                ))
-                .unwrap();
-        }
-        _ => {
-            window.center().unwrap();
-        }
-    }
+    window.center().unwrap();
     window.emit("new_image", "").unwrap();
 }
 
@@ -513,7 +444,8 @@ pub struct OverlayState {
     pub screen_y: i32,
     pub monitor_x: i32,
     pub monitor_y: i32,
-    pub padding: u32,
+    pub padding_left: u32,
+    pub padding_top: u32,
     pub ocr_lang: String,
     pub service: String,
     pub target_lang: String,
@@ -529,6 +461,8 @@ struct OverlayRectPayload {
     dpr: f64,
     screen_x: i32,
     screen_y: i32,
+    padding_left: u32,
+    padding_top: u32,
 }
 
 static OVERLAY_STATE: once_cell::sync::Lazy<std::sync::Mutex<Option<OverlayState>>> =
@@ -571,7 +505,8 @@ pub fn overlay_translate() {
                 screen_y: rect.screen_y,
                 monitor_x: monitor_position.x,
                 monitor_y: monitor_position.y,
-                padding: (8.0 * rect.dpr).round() as u32,
+                padding_left: rect.padding_left,
+                padding_top: rect.padding_top,
                 ocr_lang: overlay_ocr_lang(),
                 service: overlay_service_instance(),
                 target_lang: overlay_target_language(),
@@ -665,6 +600,16 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
 
     #[cfg(target_os = "windows")]
     set_shadow(&window, false).unwrap_or_default();
+
+    info!(
+        "Overlay window geometry: requested ({}, {}) {}x{}, actual position {:?}, size {:?}",
+        state.screen_x,
+        state.screen_y,
+        state.width,
+        state.height,
+        window.outer_position().ok(),
+        window.outer_size().ok()
+    );
 
     Ok(window)
 }

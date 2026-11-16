@@ -82,7 +82,31 @@ pub fn system_ocr_boxes(app_handle: tauri::AppHandle, lang: &str) -> Result<Vec<
     app_cache_dir_path.push(&app_handle.config().tauri.bundle.identifier);
     app_cache_dir_path.push("pot_screenshot_cut.png");
 
-    let path = app_cache_dir_path.to_string_lossy().replace("\\\\?\\", "");
+    // Small selections contain ~14px text and Windows OCR reads them poorly.
+    // Upscale 2x for OCR only, then map the boxes back to the original image.
+    let mut ocr_scale = 1.0f32;
+    let ocr_source_path = match image::open(&app_cache_dir_path) {
+        Ok(img) if img.width() > 0 && img.width() < 1600 => {
+            let resized = image::imageops::resize(
+                &img,
+                img.width() * 2,
+                img.height() * 2,
+                image::imageops::FilterType::Lanczos3,
+            );
+            let mut ocr_path = app_cache_dir_path.clone();
+            ocr_path.set_file_name("pot_screenshot_cut_ocr.png");
+            match resized.save(&ocr_path) {
+                Ok(_) => {
+                    ocr_scale = 2.0;
+                    ocr_path
+                }
+                Err(_) => app_cache_dir_path.clone(),
+            }
+        }
+        _ => app_cache_dir_path.clone(),
+    };
+
+    let path = ocr_source_path.to_string_lossy().replace("\\\\?\\", "");
 
     let file = StorageFile::GetFileFromPathAsync(&HSTRING::from(path))
         .map_err(|e| e.to_string())?
@@ -169,10 +193,10 @@ pub fn system_ocr_boxes(app_handle: tauri::AppHandle, lang: &str) -> Result<Vec<
 
         boxes.push(LineBox {
             text,
-            x: min_x,
-            y: min_y,
-            w: max_x - min_x,
-            h: max_y - min_y,
+            x: min_x / ocr_scale,
+            y: min_y / ocr_scale,
+            w: (max_x - min_x) / ocr_scale,
+            h: (max_y - min_y) / ocr_scale,
         });
     }
 

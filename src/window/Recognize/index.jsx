@@ -1,7 +1,7 @@
 import { readDir, BaseDirectory, readTextFile, exists } from '@tauri-apps/api/fs';
 import { appConfigDir, join } from '@tauri-apps/api/path';
 import { convertFileSrc } from '@tauri-apps/api/tauri';
-import { appWindow, currentMonitor } from '@tauri-apps/api/window';
+import { appWindow } from '@tauri-apps/api/window';
 import React, { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { Button } from '@nextui-org/react';
@@ -94,51 +94,6 @@ export default function Recognize() {
 
     useEffect(() => {
         loadPluginList();
-    }, []);
-
-    // Remember the recognize window geometry.
-    useEffect(() => {
-        if (appWindow.label !== 'recognize') {
-            return;
-        }
-        let resizeTimeout = null;
-        let moveTimeout = null;
-        const unlistenResize = listen('tauri://resize', async () => {
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
-            }
-            resizeTimeout = setTimeout(async () => {
-                const monitor = await currentMonitor();
-                const factor = monitor?.scaleFactor ?? 1;
-                const size = (await appWindow.outerSize()).toLogical(factor);
-                await store.set('recognize_window_width', parseInt(size.width));
-                await store.set('recognize_window_height', parseInt(size.height));
-                await store.save();
-            }, 100);
-        });
-        const unlistenMove = listen('tauri://move', async () => {
-            if (moveTimeout) {
-                clearTimeout(moveTimeout);
-            }
-            moveTimeout = setTimeout(async () => {
-                const monitor = await currentMonitor();
-                const factor = monitor?.scaleFactor ?? 1;
-                const position = (await appWindow.outerPosition()).toLogical(factor);
-                await store.set('recognize_window_position_x', parseInt(position.x));
-                await store.set('recognize_window_position_y', parseInt(position.y));
-                await store.save();
-            }, 100);
-        });
-        return () => {
-            unlistenResize.then((f) => f());
-            unlistenMove.then((f) => f());
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
-            }
-            if (moveTimeout) {
-                clearTimeout(moveTimeout);
-            }
-        };
     }, []);
 
     // 是否自动关闭窗口

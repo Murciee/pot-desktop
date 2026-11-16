@@ -16,6 +16,38 @@ function ensureStore() {
     return storeReady;
 }
 
+// Dictionary services (Google, ECDict, ...) may return an object instead of
+// a plain string. Flatten the useful text fields for the overlay.
+function stringifyTranslation(value) {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (value && typeof value === 'object') {
+        const parts = [];
+        if (Array.isArray(value.sentence)) {
+            for (const sentence of value.sentence) {
+                if (sentence?.target) {
+                    parts.push(sentence.target);
+                }
+            }
+        }
+        if (Array.isArray(value.explanations)) {
+            for (const explanation of value.explanations) {
+                if (Array.isArray(explanation?.explains)) {
+                    parts.push(...explanation.explains.filter(Boolean));
+                }
+            }
+        }
+        if (Array.isArray(value.associations)) {
+            parts.push(...value.associations.filter(Boolean));
+        }
+        if (parts.length > 0) {
+            return parts.join('; ');
+        }
+    }
+    return '';
+}
+
 async function getPluginInfo(serviceName) {
     if (!pluginInfoCache.has(serviceName)) {
         const infoStr = await readTextFile(`plugins/translate/${serviceName}/info.json`, {
@@ -37,12 +69,13 @@ async function doTranslate(instanceKey, text, from, to, detectLang) {
         const fromLang = language[from] ?? from;
         const toLang = language[to] ?? to;
         const [func, utils] = await invoke_plugin('translate', serviceName);
-        return await func(text, fromLang, toLang, {
+        const result = await func(text, fromLang, toLang, {
             config,
             detect: detectLang,
             setResult: () => {},
             utils,
         });
+        return stringifyTranslation(result);
     }
 
     const service = builtinServices[serviceName];
@@ -50,11 +83,12 @@ async function doTranslate(instanceKey, text, from, to, detectLang) {
         throw new Error(`Unknown translate service: ${serviceName}`);
     }
     const language = service.Language ?? {};
-    return await service.translate(text, language[from] ?? from, language[to] ?? to, {
+    const result = await service.translate(text, language[from] ?? from, language[to] ?? to, {
         config,
         detect: detectLang,
         setResult: () => {},
     });
+    return stringifyTranslation(result);
 }
 
 /**

@@ -3,6 +3,8 @@ import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api';
 import toast, { Toaster } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
+import { info, error as logError } from 'tauri-plugin-log-api';
+import { MdAdd, MdClose, MdLock, MdRefresh, MdRemove, MdSwapHoriz } from 'react-icons/md';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { translateWithService } from '../../utils/translate_text';
@@ -91,20 +93,20 @@ export default function Overlay() {
             );
             return;
         }
-        console.log('[overlay] OCR boxes', boxes);
+        info(`[overlay] OCR returned ${boxes.length} line boxes`);
 
         const merged = mergeLineBoxes(boxes);
+        info(`[overlay] merged into ${merged.length} text blocks`);
         if (merged.length === 0) {
             await showErrorAndClose(tr('overlay.no_text'));
             return;
         }
 
         // cut_image adds padding; OCR coordinates are relative to the padded image.
-        const padding = overlayState.padding ?? Math.round(8 * (overlayState.dpr || 1));
         const trimmed = merged.map((block) => ({
             ...block,
-            x: block.x - padding,
-            y: block.y - padding,
+            x: block.x - (overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1))),
+            y: block.y - (overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1))),
         }));
         const normalized = normalizeBlocks(
             trimmed,
@@ -128,6 +130,7 @@ export default function Overlay() {
         const concurrency = Math.max(1, Math.min(10, Number(concurrencyRef.current) || 3));
         const workerCount = Math.min(concurrency, pending.length);
         let failed = 0;
+        let lastError = '';
 
         const worker = async () => {
             while (pending.length > 0) {
@@ -147,13 +150,18 @@ export default function Overlay() {
                         throw new Error('Translation service returned a non-text result');
                     }
                     const translated = value.trim();
+                    if (translated === '') {
+                        throw new Error('Translation service returned empty text');
+                    }
                     setBlocks((prev) =>
                         prev.map((item) =>
                             item.id === block.id ? { ...item, translated, error: false } : item
                         )
                     );
-                } catch {
+                } catch (e) {
                     failed += 1;
+                    lastError = e?.toString?.() ?? String(e);
+                    logError(`[overlay] translate failed: ${lastError}`);
                     if (disposedRef.current) {
                         return;
                     }
@@ -168,9 +176,12 @@ export default function Overlay() {
 
         if (!disposedRef.current) {
             if (failed === normalized.length) {
-                toast.error(tr('overlay.all_failed'), { style, duration: 6000 });
+                toast.error(
+                    `${tr('overlay.all_failed')} (${overlayState.service})${lastError ? `\n${lastError}` : ''}`,
+                    { style, duration: 8000 }
+                );
             } else if (failed > 0) {
-                toast.error(tr('overlay.partial_failed'), { style });
+                toast.error(`${tr('overlay.partial_failed')} (${overlayState.service})`, { style });
             }
         }
     };
@@ -190,13 +201,19 @@ export default function Overlay() {
                 x: overlayState.monitorX,
                 y: overlayState.monitorY,
             });
-            await invoke('cut_image', {
+            const cropInfo = await invoke('cut_image', {
                 left: overlayState.left,
                 top: overlayState.top,
                 width: overlayState.width,
                 height: overlayState.height,
             });
-            await runRef.current(overlayState);
+            const refreshedState = {
+                ...overlayState,
+                paddingLeft: cropInfo.paddingLeft,
+                paddingTop: cropInfo.paddingTop,
+            };
+            setState(refreshedState);
+            await runRef.current(refreshedState);
         } catch (e) {
             toast.error((tRef.current('overlay.refresh_failed') ?? '') + (e?.toString() ?? String(e)), {
                 style: toastStyleRef.current,
@@ -312,8 +329,14 @@ export default function Overlay() {
         color: '#fff',
         fontSize: 12,
         lineHeight: '20px',
-        padding: '0 8px',
+        width: 26,
+        height: 22,
+        padding: 0,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         cursor: 'pointer',
+        flex: '0 0 auto',
     };
 
     return (
@@ -339,8 +362,9 @@ export default function Overlay() {
                         height: TOOLBAR_HEIGHT,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 6,
-                        padding: '0 8px',
+                        gap: 4,
+                        padding: '0 4px',
+                        overflow: 'hidden',
                         background: 'rgba(24,24,27,0.92)',
                         zIndex: 10,
                         cursor: 'move',
@@ -355,46 +379,57 @@ export default function Overlay() {
                     <button
                         type='button'
                         style={toolStyle}
+                        title={t('overlay.refresh')}
+                        aria-label={t('overlay.refresh')}
                         onClick={() => refreshRef.current?.()}
                         disabled={refreshing}
                     >
-                        {t('overlay.refresh')}
+                        <MdRefresh size={16} />
                     </button>
                     <button
                         type='button'
                         style={toolStyle}
+                        title={showOriginal ? t('overlay.translation') : t('overlay.original')}
+                        aria-label={showOriginal ? t('overlay.translation') : t('overlay.original')}
                         onClick={() => setShowOriginal((value) => !value)}
                     >
-                        {showOriginal ? t('overlay.translation') : t('overlay.original')}
+                        <MdSwapHoriz size={16} />
                     </button>
                     <button
                         type='button'
                         style={toolStyle}
+                        title={t('overlay.font_smaller')}
+                        aria-label={t('overlay.font_smaller')}
                         onClick={() => setFontScale((value) => Math.max(0.5, Number((value - 0.1).toFixed(2))))}
                     >
-                        A-
+                        <MdRemove size={14} />
                     </button>
                     <button
                         type='button'
                         style={toolStyle}
+                        title={t('overlay.font_larger')}
+                        aria-label={t('overlay.font_larger')}
                         onClick={() => setFontScale((value) => Math.min(2, Number((value + 0.1).toFixed(2))))}
                     >
-                        A+
+                        <MdAdd size={14} />
                     </button>
                     <button
                         type='button'
                         style={toolStyle}
+                        title={t('overlay.lock')}
+                        aria-label={t('overlay.lock')}
                         onClick={() => setLocked(true)}
                     >
-                        {t('overlay.lock')}
+                        <MdLock size={15} />
                     </button>
-                    <div style={{ flex: 1 }} />
                     <button
                         type='button'
-                        style={toolStyle}
+                        style={{ ...toolStyle, marginLeft: 'auto' }}
+                        title={t('overlay.close')}
+                        aria-label={t('overlay.close')}
                         onClick={() => appWindow.close()}
                     >
-                        {t('overlay.close')}
+                        <MdClose size={16} />
                     </button>
                 </div>
             )}

@@ -1,12 +1,10 @@
 import { useLocation, useRoutes } from 'react-router-dom';
 import React, { useEffect, useState } from 'react';
-import { appWindow, currentMonitor } from '@tauri-apps/api/window';
-import { listen } from '@tauri-apps/api/event';
+import { appWindow } from '@tauri-apps/api/window';
 import { Card, Divider } from '@nextui-org/react';
 import { useTranslation } from 'react-i18next';
 
 import WindowControl from '../../components/WindowControl';
-import { store } from '../../utils/store';
 import SideBar from './components/SideBar';
 import { osType } from '../../utils/env';
 import { useConfig } from '../../hooks';
@@ -23,51 +21,6 @@ export default function Config() {
         if (appWindow.label === 'config') {
             appWindow.show();
         }
-    }, []);
-
-    // Remember the window geometry. Config windows are always restored.
-    useEffect(() => {
-        if (appWindow.label !== 'config') {
-            return;
-        }
-        let resizeTimeout = null;
-        let moveTimeout = null;
-        const unlistenResize = listen('tauri://resize', async () => {
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
-            }
-            resizeTimeout = setTimeout(async () => {
-                const monitor = await currentMonitor();
-                const factor = monitor?.scaleFactor ?? 1;
-                const size = (await appWindow.outerSize()).toLogical(factor);
-                await store.set('config_window_width', parseInt(size.width));
-                await store.set('config_window_height', parseInt(size.height));
-                await store.save();
-            }, 100);
-        });
-        const unlistenMove = listen('tauri://move', async () => {
-            if (moveTimeout) {
-                clearTimeout(moveTimeout);
-            }
-            moveTimeout = setTimeout(async () => {
-                const monitor = await currentMonitor();
-                const factor = monitor?.scaleFactor ?? 1;
-                const position = (await appWindow.outerPosition()).toLogical(factor);
-                await store.set('config_window_position_x', parseInt(position.x));
-                await store.set('config_window_position_y', parseInt(position.y));
-                await store.save();
-            }, 100);
-        });
-        return () => {
-            unlistenResize.then((f) => f());
-            unlistenMove.then((f) => f());
-            if (resizeTimeout) {
-                clearTimeout(resizeTimeout);
-            }
-            if (moveTimeout) {
-                clearTimeout(moveTimeout);
-            }
-        };
     }, []);
 
     return (

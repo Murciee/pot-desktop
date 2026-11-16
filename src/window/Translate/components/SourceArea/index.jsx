@@ -20,11 +20,14 @@ import * as recognizeServices from '../../../../services/recognize';
 import * as builtinTtsServices from '../../../../services/tts';
 import detect from '../../../../utils/lang_detect';
 import { store } from '../../../../utils/store';
+import { removeNewlines } from '../../../../utils/text';
 import { info } from 'tauri-plugin-log-api';
 import { debug } from 'tauri-plugin-log-api';
 
 export const sourceTextAtom = atom('');
 export const detectLanguageAtom = atom('');
+export const restoredSnapshotAtom = atom(null);
+export const manualTranslateAtom = atom(0);
 
 let unlisten = null;
 let timer = null;
@@ -34,6 +37,8 @@ export default function SourceArea(props) {
     const [appFontSize] = useConfig('app_font_size', 16);
     const [sourceText, setSourceText, syncSourceText] = useSyncAtom(sourceTextAtom);
     const [detectLanguage, setDetectLanguage] = useAtom(detectLanguageAtom);
+    const [, setManualTranslate] = useAtom(manualTranslateAtom);
+    const [, setRestoredSnapshot] = useAtom(restoredSnapshotAtom);
     const [incrementalTranslate] = useConfig('incremental_translate', false);
     const [dynamicTranslate] = useConfig('dynamic_translate', false);
     const [deleteNewline] = useConfig('translate_delete_newline', false);
@@ -59,7 +64,16 @@ export default function SourceArea(props) {
         }
         // 清空检测语言
         setDetectLanguage('');
-        if (text === '[INPUT_TRANSLATE]') {
+        if (text === '[LAST_TRANSLATE]') {
+            setWindowType('[SELECTION_TRANSLATE]');
+            const source = (await store.get('last_translate_source')) ?? '';
+            const result = (await store.get('last_translate_result')) ?? '';
+            const serviceInstanceKey = (await store.get('last_translate_service')) ?? '';
+            setSourceText(source);
+            setRestoredSnapshot({ source, result, serviceInstanceKey });
+            appWindow.show();
+            appWindow.setFocus();
+        } else if (text === '[INPUT_TRANSLATE]') {
             setWindowType('[INPUT_TRANSLATE]');
             appWindow.show();
             appWindow.setFocus();
@@ -84,7 +98,7 @@ export default function SourceArea(props) {
                         (v) => {
                             let newText = v.trim();
                             if (deleteNewline) {
-                                newText = v.replace(/\-\s+/g, '').replace(/\s+/g, ' ');
+                                newText = removeNewlines(v);
                             } else {
                                 newText = v.trim();
                             }
@@ -121,7 +135,7 @@ export default function SourceArea(props) {
                             (v) => {
                                 let newText = v.trim();
                                 if (deleteNewline) {
-                                    newText = v.replace(/\-\s+/g, '').replace(/\s+/g, ' ');
+                                    newText = removeNewlines(v);
                                 } else {
                                     newText = v.trim();
                                 }
@@ -148,7 +162,7 @@ export default function SourceArea(props) {
             setWindowType('[SELECTION_TRANSLATE]');
             let newText = text.trim();
             if (deleteNewline) {
-                newText = text.replace(/\-\s+/g, '').replace(/\s+/g, ' ');
+                newText = removeNewlines(text);
             } else {
                 newText = text.trim();
             }
@@ -419,7 +433,7 @@ export default function SourceArea(props) {
                                     variant='light'
                                     size='sm'
                                     onPress={() => {
-                                        const newText = sourceText.replace(/\-\s+/g, '').replace(/\s+/g, ' ');
+                                        const newText = removeNewlines(sourceText);
                                         setSourceText(newText);
                                         detect_language(newText).then(() => {
                                             syncSourceText();
@@ -465,6 +479,7 @@ export default function SourceArea(props) {
                             onPress={() => {
                                 detect_language(sourceText).then(() => {
                                     syncSourceText();
+                                    setManualTranslate((value) => value + 1);
                                 });
                             }}
                         />

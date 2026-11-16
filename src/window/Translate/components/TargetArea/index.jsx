@@ -34,8 +34,14 @@ import useMeasure from 'react-use-measure';
 import * as builtinCollectionServices from '../../../../services/collection';
 import { sourceLanguageAtom, targetLanguageAtom } from '../LanguageArea';
 import { useConfig, useToastStyle, useVoice } from '../../../../hooks';
-import { sourceTextAtom, detectLanguageAtom } from '../SourceArea';
+import {
+    sourceTextAtom,
+    detectLanguageAtom,
+    manualTranslateAtom,
+    restoredSnapshotAtom,
+} from '../SourceArea';
 import { invoke_plugin } from '../../../../utils/invoke_plugin';
+import { store } from '../../../../utils/store';
 import * as builtinServices from '../../../../services/translate';
 import * as builtinTtsServices from '../../../../services/tts';
 
@@ -65,13 +71,24 @@ export default function TargetArea(props) {
     const [ttsServiceList] = useConfig('tts_service_list', ['lingva_tts']);
     const [translateSecondLanguage] = useConfig('translate_second_language', 'en');
     const [historyDisable] = useConfig('history_disable', false);
+    const [collapseState, setCollapseState] = useConfig('translate_collapse_state', {});
     const [isLoading, setIsLoading] = useState(false);
     const [hide, setHide] = useState(true);
 
     const [result, setResult] = useState('');
     const [error, setError] = useState('');
+    const collapsed = collapseState?.[currentTranslateServiceInstanceKey] === true;
+    const defaultCollapsed = collapseState?.[currentTranslateServiceInstanceKey] === undefined;
+    const collapseLoaded = collapseState !== null;
 
     const sourceText = useAtomValue(sourceTextAtom);
+    const manualTranslate = useAtomValue(manualTranslateAtom);
+    const restoredSnapshot = useAtomValue(restoredSnapshotAtom);
+    const [, setRestoredSnapshot] = useAtom(restoredSnapshotAtom);
+    const lastManualTranslateRef = useRef(manualTranslate);
+    const snapshotRef = useRef(restoredSnapshot);
+    const manualExpandRef = useRef(false);
+    snapshotRef.current = restoredSnapshot;
     const sourceLanguage = useAtomValue(sourceLanguageAtom);
     const targetLanguage = useAtomValue(targetLanguageAtom);
     const [autoCopy] = useConfig('translate_auto_copy', 'disable');
@@ -92,8 +109,41 @@ export default function TargetArea(props) {
         }
     }, [error]);
 
+    // Remember the collapsed state per service instance.
+    useEffect(() => {
+        if (collapseState === null) {
+            return;
+        }
+        const snapshot = snapshotRef.current;
+        if (snapshot && snapshot.serviceInstanceKey === currentTranslateServiceInstanceKey) {
+            return;
+        }
+        const value = collapseState[currentTranslateServiceInstanceKey];
+        if (value !== undefined) {
+            setHide(value);
+        }
+    }, [collapseState, currentTranslateServiceInstanceKey]);
+
+    // Restore the last translation when the last-window hotkey recreates the window.
+    useEffect(() => {
+        if (
+            restoredSnapshot &&
+            restoredSnapshot.serviceInstanceKey === currentTranslateServiceInstanceKey
+        ) {
+            setResult(restoredSnapshot.result || '');
+            setError('');
+            setHide(false);
+            setRestoredSnapshot(null);
+        }
+    }, [restoredSnapshot, currentTranslateServiceInstanceKey]);
+
     // listen to translation
     useEffect(() => {
+        const manual = lastManualTranslateRef.current !== manualTranslate;
+        if (!collapseLoaded) {
+            return;
+        }
+        lastManualTranslateRef.current = manualTranslate;
         setResult('');
         setError('');
         if (
@@ -104,6 +154,21 @@ export default function TargetArea(props) {
             hideWindow !== null &&
             clipboardMonitor !== null
         ) {
+            // A collapsed service does not start new requests, except for the
+            // explicit translate button which bumps manualTranslateAtom.
+            if (collapsed && !manual) {
+                return;
+            }
+            if (collapsed && manual) {
+                setHide(false);
+                const nextState = {
+                    ...(collapseState ?? {}),
+                    [currentTranslateServiceInstanceKey]: false,
+                };
+                setCollapseState(nextState);
+                store.set('translate_collapse_state', nextState);
+                store.save();
+            }
             if (autoCopy === 'source' && !clipboardMonitor) {
                 writeText(sourceText).then(() => {
                     if (hideWindow) {
@@ -121,7 +186,20 @@ export default function TargetArea(props) {
         hideWindow,
         currentTranslateServiceInstanceKey,
         clipboardMonitor,
+        manualTranslate,
+        collapseLoaded,
     ]);
+
+    // Translate when the user expands a collapsed service.
+    useEffect(() => {
+        if (hide || !manualExpandRef.current) {
+            return;
+        }
+        manualExpandRef.current = false;
+        if (sourceText.trim() !== '' && sourceLanguage && targetLanguage) {
+            translate();
+        }
+    }, [hide]);
 
     // todo: history panel use service instance key
     const addToHistory = async (text, source, target, serviceInstanceKey, result) => {
@@ -145,6 +223,33 @@ export default function TargetArea(props) {
                     });
                 }
             );
+    };
+
+    const saveLastTranslate = async (value, targetLang) => {
+        if (typeof value !== 'string' || sourceText.trim() === '') {
+            return;
+        }
+        await store.set('last_translate_source', sourceText.trim());
+        await store.set('last_translate_result', value);
+        await store.set('last_translate_service', currentTranslateServiceInstanceKey);
+        await store.set('last_translate_source_language', sourceLanguage);
+        await store.set('last_translate_target_language', targetLang);
+        await store.save();
+    };
+
+    const toggleHide = () => {
+        const next = !hide;
+        if (!next) {
+            manualExpandRef.current = true;
+        }
+        setHide(next);
+        const nextState = {
+            ...(collapseState ?? {}),
+            [currentTranslateServiceInstanceKey]: next,
+        };
+        setCollapseState(nextState);
+        store.set('translate_collapse_state', nextState);
+        store.save();
     };
 
     function invokeOnce(fn) {
@@ -174,10 +279,16 @@ export default function TargetArea(props) {
                     newTargetLanguage = translateSecondLanguage;
                 }
                 setIsLoading(true);
-                setHide(true);
+                if (defaultCollapsed) {
+                    setHide(true);
+                }
                 const instanceConfig = serviceInstanceConfigMap[currentTranslateServiceInstanceKey];
                 instanceConfig['enable'] = 'true';
-                const setHideOnce = invokeOnce(setHide);
+                const setHideOnce = invokeOnce((value) => {
+                    if (!collapsed) {
+                        setHide(value);
+                    }
+                });
                 let [func, utils] = await invoke_plugin('translate', translateServiceName);
                 func(sourceText.trim(), pluginInfo.language[sourceLanguage], pluginInfo.language[newTargetLanguage], {
                     config: instanceConfig,
@@ -196,6 +307,9 @@ export default function TargetArea(props) {
                         setIsLoading(false);
                         if (v !== '') {
                             setHideOnce(false);
+                        }
+                        if (typeof v === 'string' && v.trim() !== '') {
+                            saveLastTranslate(v.trim(), newTargetLanguage).catch(() => {});
                         }
                         if (!historyDisable) {
                             addToHistory(
@@ -248,9 +362,15 @@ export default function TargetArea(props) {
                     newTargetLanguage = translateSecondLanguage;
                 }
                 setIsLoading(true);
-                setHide(true);
+                if (defaultCollapsed) {
+                    setHide(true);
+                }
                 const instanceConfig = serviceInstanceConfigMap[currentTranslateServiceInstanceKey];
-                const setHideOnce = invokeOnce(setHide);
+                const setHideOnce = invokeOnce((value) => {
+                    if (!collapsed) {
+                        setHide(value);
+                    }
+                });
                 builtinServices[translateServiceName]
                     .translate(sourceText.trim(), LanguageEnum[sourceLanguage], LanguageEnum[newTargetLanguage], {
                         config: instanceConfig,
@@ -482,7 +602,7 @@ export default function TargetArea(props) {
                         isIconOnly
                         variant='light'
                         className='h-[20px] w-[20px]'
-                        onPress={() => setHide(!hide)}
+                        onPress={toggleHide}
                     >
                         {hide ? (
                             <BiExpandVertical className='text-[16px]' />

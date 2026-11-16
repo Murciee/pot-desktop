@@ -21,7 +21,14 @@ pub fn reload_store() {
 }
 
 #[tauri::command]
-pub fn cut_image(left: u32, top: u32, width: u32, height: u32, app_handle: tauri::AppHandle) {
+pub fn cut_image(
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+    window: tauri::Window,
+    app_handle: tauri::AppHandle,
+) {
     use dirs::cache_dir;
     use image::GenericImage;
     info!("Cut image: {}x{}+{}+{}", width, height, left, top);
@@ -38,7 +45,27 @@ pub fn cut_image(left: u32, top: u32, width: u32, height: u32, app_handle: tauri
             return;
         }
     };
-    let img2 = img.sub_image(left, top, width, height);
+    // Add a small padding so characters touching the selection edge are kept.
+    let padding = (8.0 * window.scale_factor().unwrap_or(1.0)).round() as u32;
+    let image_width = img.width();
+    let image_height = img.height();
+    let right = (left.saturating_add(width)).min(image_width);
+    let bottom = (top.saturating_add(height)).min(image_height);
+    if right <= left || bottom <= top {
+        error!("Invalid cut area after clamping");
+        return;
+    }
+    let padded_left = left.saturating_sub(padding);
+    let padded_top = top.saturating_sub(padding);
+    let padded_right = right.saturating_add(padding).min(image_width);
+    let padded_bottom = bottom.saturating_add(padding).min(image_height);
+    let padded_width = padded_right - padded_left;
+    let padded_height = padded_bottom - padded_top;
+    info!(
+        "Padded cut area: {}x{}+{}+{} (padding {})",
+        padded_width, padded_height, padded_left, padded_top, padding
+    );
+    let img2 = img.sub_image(padded_left, padded_top, padded_width, padded_height);
     app_cache_dir_path.pop();
     app_cache_dir_path.push("pot_screenshot_cut.png");
     match img2.to_image().save(&app_cache_dir_path) {

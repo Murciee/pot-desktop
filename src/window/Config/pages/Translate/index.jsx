@@ -6,11 +6,15 @@ import { CardBody } from '@nextui-org/react';
 import { Dropdown } from '@nextui-org/react';
 import { Switch } from '@nextui-org/react';
 import { Button } from '@nextui-org/react';
+import { Input } from '@nextui-org/react';
 import { Card } from '@nextui-org/react';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { languageList } from '../../../../utils/language';
 import { useConfig } from '../../../../hooks/useConfig';
+import { store } from '../../../../utils/store';
+import { osType } from '../../../../utils/env';
 import { invoke } from '@tauri-apps/api';
 
 export default function Translate() {
@@ -32,7 +36,33 @@ export default function Translate() {
     const [hideWindow, setHideWindow] = useConfig('translate_hide_window', false);
     const [closeOnBlur, setCloseOnBlur] = useConfig('translate_close_on_blur', true);
     const [alwaysOnTop, setAlwaysOnTop] = useConfig('translate_always_on_top', false);
+    const [translateServiceInstanceList] = useConfig('translate_service_list', []);
+    const [overlayService, setOverlayService] = useConfig('overlay_service_instance', '');
+    const [overlayTargetLanguage, setOverlayTargetLanguage] = useConfig('overlay_target_language', '');
+    const [overlayOpacity, setOverlayOpacity] = useConfig('overlay_opacity', 0.85);
+    const [overlayFontScale, setOverlayFontScale] = useConfig('overlay_font_scale', 1);
+    const [overlayConcurrency, setOverlayConcurrency] = useConfig('overlay_max_concurrency', 3);
+    const [overlayRefreshHotkey] = useConfig('hotkey_overlay_refresh', '');
+    const [instanceNames, setInstanceNames] = useState({});
     const { t } = useTranslation();
+    const navigate = useNavigate();
+
+    useEffect(() => {
+        let disposed = false;
+        (async () => {
+            const names = {};
+            for (const instanceKey of translateServiceInstanceList ?? []) {
+                const instanceConfig = (await store.get(instanceKey)) ?? {};
+                names[instanceKey] = instanceConfig.instanceName || instanceKey.split('@')[0];
+            }
+            if (!disposed) {
+                setInstanceNames(names);
+            }
+        })();
+        return () => {
+            disposed = true;
+        };
+    }, [translateServiceInstanceList]);
 
     return (
         <>
@@ -330,6 +360,158 @@ export default function Translate() {
                     </div>
                 </CardBody>
             </Card>
+            {osType === 'Windows_NT' && (
+                <Card className='mt-[10px]'>
+                    <CardBody>
+                        <h2 className='mb-[10px]'>{t('config.translate.overlay_title')}</h2>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_service')}</h3>
+                            {overlayService !== null && (
+                                <Dropdown>
+                                    <DropdownTrigger>
+                                        <Button
+                                            variant='bordered'
+                                            className='max-w-[50%]'
+                                        >
+                                            {overlayService === ''
+                                                ? t('config.translate.overlay_service_follow')
+                                                : instanceNames[overlayService] || overlayService}
+                                        </Button>
+                                    </DropdownTrigger>
+                                    <DropdownMenu
+                                        aria-label='overlay service'
+                                        className='max-h-[50vh] overflow-y-auto'
+                                        onAction={(key) => {
+                                            setOverlayService(key === 'follow' ? '' : key);
+                                        }}
+                                    >
+                                        <DropdownItem key='follow'>
+                                            {t('config.translate.overlay_service_follow')}
+                                        </DropdownItem>
+                                        {(translateServiceInstanceList ?? []).map((instanceKey) => (
+                                            <DropdownItem key={instanceKey}>
+                                                {instanceNames[instanceKey] || instanceKey}
+                                            </DropdownItem>
+                                        ))}
+                                    </DropdownMenu>
+                                </Dropdown>
+                            )}
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_target_language')}</h3>
+                            {overlayTargetLanguage !== null && (
+                                <Dropdown>
+                                    <DropdownTrigger>
+                                        <Button variant='bordered'>
+                                            {overlayTargetLanguage === ''
+                                                ? t('config.translate.overlay_target_follow')
+                                                : t(`languages.${overlayTargetLanguage}`)}
+                                        </Button>
+                                    </DropdownTrigger>
+                                    <DropdownMenu
+                                        aria-label='overlay target language'
+                                        className='max-h-[50vh] overflow-y-auto'
+                                        onAction={(key) => {
+                                            setOverlayTargetLanguage(key === 'follow' ? '' : key);
+                                        }}
+                                    >
+                                        <DropdownItem key='follow'>
+                                            {t('config.translate.overlay_target_follow')}
+                                        </DropdownItem>
+                                        {languageList.map((item) => (
+                                            <DropdownItem key={item}>{t(`languages.${item}`)}</DropdownItem>
+                                        ))}
+                                    </DropdownMenu>
+                                </Dropdown>
+                            )}
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_opacity')}</h3>
+                            {overlayOpacity !== null && (
+                                <Input
+                                    type='number'
+                                    variant='bordered'
+                                    min={0.3}
+                                    max={1}
+                                    step={0.05}
+                                    value={String(overlayOpacity)}
+                                    className='max-w-[120px]'
+                                    onValueChange={(v) => {
+                                        const value = parseFloat(v);
+                                        if (Number.isNaN(value)) {
+                                            setOverlayOpacity(0.85);
+                                        } else {
+                                            setOverlayOpacity(Math.min(1, Math.max(0.3, value)));
+                                        }
+                                    }}
+                                />
+                            )}
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_font_scale')}</h3>
+                            {overlayFontScale !== null && (
+                                <Input
+                                    type='number'
+                                    variant='bordered'
+                                    min={0.5}
+                                    max={2}
+                                    step={0.1}
+                                    value={String(overlayFontScale)}
+                                    className='max-w-[120px]'
+                                    onValueChange={(v) => {
+                                        const value = parseFloat(v);
+                                        if (Number.isNaN(value)) {
+                                            setOverlayFontScale(1);
+                                        } else {
+                                            setOverlayFontScale(Math.min(2, Math.max(0.5, value)));
+                                        }
+                                    }}
+                                />
+                            )}
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_concurrency')}</h3>
+                            {overlayConcurrency !== null && (
+                                <Input
+                                    type='number'
+                                    variant='bordered'
+                                    min={1}
+                                    max={10}
+                                    step={1}
+                                    value={String(overlayConcurrency)}
+                                    className='max-w-[120px]'
+                                    onValueChange={(v) => {
+                                        const value = parseInt(v);
+                                        if (Number.isNaN(value)) {
+                                            setOverlayConcurrency(3);
+                                        } else {
+                                            setOverlayConcurrency(Math.min(10, Math.max(1, value)));
+                                        }
+                                    }}
+                                />
+                            )}
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_refresh_hotkey')}</h3>
+                            <div className='flex items-center gap-2 max-w-[50%]'>
+                                <Input
+                                    isReadOnly
+                                    variant='bordered'
+                                    value={overlayRefreshHotkey || ''}
+                                    placeholder={t('config.translate.overlay_hotkey_hint')}
+                                />
+                                <Button
+                                    variant='bordered'
+                                    onPress={() => navigate('/hotkey')}
+                                >
+                                    {t('config.translate.overlay_go_hotkey')}
+                                </Button>
+                            </div>
+                        </div>
+                        <p className='text-[11px] text-default-500'>{t('config.translate.overlay_only_windows')}</p>
+                    </CardBody>
+                </Card>
+            )}
         </>
     );
 }

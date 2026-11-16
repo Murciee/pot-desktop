@@ -33,6 +33,7 @@ use tauri_plugin_log::LogTarget;
 use tray::*;
 use updater::check_update;
 use window::config_window;
+use window::get_overlay_state;
 use window::updater_window;
 
 // Global AppHandle
@@ -134,6 +135,8 @@ fn main() {
             get_base64,
             copy_img,
             system_ocr,
+            system_ocr_boxes,
+            get_overlay_state,
             set_proxy,
             unset_proxy,
             run_binary,

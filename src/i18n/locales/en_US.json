@@ -133,7 +133,19 @@
                 "google": "Google",
                 "bing": "Bing",
                 "yandex": "Yandex",
-                "local": "Local"
+                "local": "Local",
+                "overlay_title": "Overlay Translation",
+                "overlay_only_windows": "Overlay translation is only available on Windows.",
+                "overlay_service": "Service Instance",
+                "overlay_service_follow": "Follow translation window (first instance)",
+                "overlay_target_language": "Target Language",
+                "overlay_target_follow": "Follow translation settings",
+                "overlay_opacity": "Background Opacity",
+                "overlay_font_scale": "Font Scale",
+                "overlay_concurrency": "Max Concurrency",
+                "overlay_refresh_hotkey": "Refresh Hotkey",
+                "overlay_hotkey_hint": "Set it on the Hotkey page",
+                "overlay_go_hotkey": "Open Hotkey Settings"
             },
             "recognize": {
                 "label": "Recognize",
@@ -151,6 +163,9 @@
                 "input_translate": "Text Translation",
                 "ocr_recognize": "Text Recognition",
                 "ocr_translate": "Screenshot Translation",
+                "overlay_translate": "Overlay Translation",
+                "overlay_refresh": "Refresh Overlay",
+                "last_window": "Last Translation Window",
                 "is_register": "The hotkey is already registered",
                 "success": "Hotkey register success",
                 "set_hotkey": "Press to Set Hotkey"
@@ -479,6 +494,19 @@
                     "token": "Token"
                 }
             }
+        },
+        "overlay": {
+            "refresh": "Refresh",
+            "lock": "Lock",
+            "close": "Close",
+            "original": "Original",
+            "translation": "Translation",
+            "no_text": "No text detected in the selected area",
+            "ocr_failed": "OCR failed: ",
+            "no_service": "No translation service configured. Please add one in Preferences.",
+            "partial_failed": "Some blocks failed to translate, showing the original text",
+            "all_failed": "Translation failed. Please check the service configuration.",
+            "refresh_failed": "Refresh failed: "
         },
         "translate": {
             "translate": "Translate",

@@ -1,11 +1,13 @@
+#[cfg(target_os = "macos")]
 use std::fs;
 
 use crate::config::get;
 use crate::config::set;
 use crate::StringWrapper;
 use crate::APP;
+#[cfg(target_os = "macos")]
 use dirs::cache_dir;
-use log::{info, warn};
+use log::{error, info, warn};
 use tauri::Manager;
 use tauri::Monitor;
 use tauri::Window;
@@ -113,13 +115,64 @@ fn build_window(label: &str, title: &str) -> (Window, bool) {
     }
 }
 
+fn clamp_position(
+    monitor: &Monitor,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> (f64, f64) {
+    let dpi = monitor.scale_factor();
+    let monitor_x = monitor.position().x as f64 / dpi;
+    let monitor_y = monitor.position().y as f64 / dpi;
+    let monitor_width = monitor.size().width as f64 / dpi;
+    let monitor_height = monitor.size().height as f64 / dpi;
+    let x = x
+        .max(monitor_x)
+        .min((monitor_x + monitor_width - width).max(monitor_x));
+    let y = y
+        .max(monitor_y)
+        .min((monitor_y + monitor_height - height).max(monitor_y));
+    (x, y)
+}
+
 pub fn config_window() {
-    let (window, _exists) = build_window("config", "Config");
+    let (window, exists) = build_window("config", "Config");
+    if exists {
+        return;
+    }
     window
         .set_min_size(Some(tauri::LogicalSize::new(800, 400)))
         .unwrap();
-    window.set_size(tauri::LogicalSize::new(800, 600)).unwrap();
-    window.center().unwrap();
+    let width = get("config_window_width")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(800);
+    let height = get("config_window_height")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(600);
+    window
+        .set_size(tauri::LogicalSize::new(width as f64, height as f64))
+        .unwrap();
+
+    let monitor = window.current_monitor().unwrap().unwrap();
+    let dpi = monitor.scale_factor();
+    match (
+        get("config_window_position_x").and_then(|v| v.as_i64()),
+        get("config_window_position_y").and_then(|v| v.as_i64()),
+    ) {
+        (Some(x), Some(y)) => {
+            let (x, y) = clamp_position(&monitor, x as f64, y as f64, width as f64, height as f64);
+            window
+                .set_position(tauri::PhysicalPosition::new(
+                    (x * dpi) as i32,
+                    (y * dpi) as i32,
+                ))
+                .unwrap();
+        }
+        _ => {
+            window.center().unwrap();
+        }
+    }
 }
 
 fn translate_window() -> Window {
@@ -259,6 +312,25 @@ pub fn input_translate() {
     window.emit("new_text", "[INPUT_TRANSLATE]").unwrap();
 }
 
+pub fn last_translate_window() {
+    let app_handle = APP.get().unwrap();
+    if let Some(window) = app_handle.get_window("translate") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    let state: tauri::State<StringWrapper> = app_handle.state();
+    state
+        .0
+        .lock()
+        .unwrap()
+        .replace_range(.., "[LAST_TRANSLATE]");
+
+    let window = translate_window();
+    let _ = window.emit("new_text", "[LAST_TRANSLATE]");
+}
+
 pub fn text_translate(text: String) {
     let app_handle = APP.get().unwrap();
     // Clear State
@@ -308,7 +380,23 @@ pub fn recognize_window() {
             (height as f64) * dpi,
         ))
         .unwrap();
-    window.center().unwrap();
+    match (
+        get("recognize_window_position_x").and_then(|v| v.as_i64()),
+        get("recognize_window_position_y").and_then(|v| v.as_i64()),
+    ) {
+        (Some(x), Some(y)) => {
+            let (x, y) = clamp_position(&monitor, x as f64, y as f64, width as f64, height as f64);
+            window
+                .set_position(tauri::PhysicalPosition::new(
+                    (x * dpi) as i32,
+                    (y * dpi) as i32,
+                ))
+                .unwrap();
+        }
+        _ => {
+            window.center().unwrap();
+        }
+    }
     window.emit("new_image", "").unwrap();
 }
 
@@ -408,4 +496,217 @@ pub fn updater_window() {
         .unwrap();
     window.set_size(tauri::LogicalSize::new(600, 400)).unwrap();
     window.center().unwrap();
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayState {
+    pub left: u32,
+    pub top: u32,
+    pub width: u32,
+    pub height: u32,
+    pub dpr: f64,
+    pub screen_x: i32,
+    pub screen_y: i32,
+    pub monitor_x: i32,
+    pub monitor_y: i32,
+    pub padding: u32,
+    pub ocr_lang: String,
+    pub service: String,
+    pub target_lang: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayRectPayload {
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+    dpr: f64,
+    screen_x: i32,
+    screen_y: i32,
+}
+
+static OVERLAY_STATE: once_cell::sync::Lazy<std::sync::Mutex<Option<OverlayState>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+static OVERLAY_LISTENER_ID: once_cell::sync::Lazy<
+    std::sync::Mutex<Option<tauri::EventHandler>>,
+> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
+#[cfg(target_os = "windows")]
+pub fn overlay_translate() {
+    let app_handle = APP.get().unwrap();
+
+    // Remove the listener left by the previous run.
+    if let Some(handler) = OVERLAY_LISTENER_ID.lock().unwrap().take() {
+        if let Some(window) = app_handle.get_window("screenshot") {
+            window.unlisten(handler);
+        }
+    }
+
+    // Never capture our own translations.
+    close_overlay_window(app_handle);
+
+    let window = screenshot_window();
+    let window_for_listener = window.clone();
+    let id = window.listen("overlay_rect", move |event| {
+        if let Ok(rect) = serde_json::from_str::<OverlayRectPayload>(event.payload().unwrap_or_default()) {
+            let monitor = window_for_listener.current_monitor().ok().flatten();
+            let monitor_position = monitor
+                .as_ref()
+                .map(|m| *m.position())
+                .unwrap_or(tauri::PhysicalPosition::new(rect.screen_x - rect.left as i32, rect.screen_y - rect.top as i32));
+
+            let state = OverlayState {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                dpr: rect.dpr,
+                screen_x: rect.screen_x,
+                screen_y: rect.screen_y,
+                monitor_x: monitor_position.x,
+                monitor_y: monitor_position.y,
+                padding: (8.0 * rect.dpr).round() as u32,
+                ocr_lang: overlay_ocr_lang(),
+                service: overlay_service_instance(),
+                target_lang: overlay_target_language(),
+            };
+            info!("Overlay rect: {:?}", state);
+            *OVERLAY_STATE.lock().unwrap() = Some(state.clone());
+            match create_overlay_window(&state) {
+                Ok(_) => info!("Overlay window created"),
+                Err(e) => error!("Failed to create overlay window: {}", e),
+            }
+        }
+        let _ = window_for_listener.unlisten(event.id());
+        *OVERLAY_LISTENER_ID.lock().unwrap() = None;
+    });
+    *OVERLAY_LISTENER_ID.lock().unwrap() = Some(id);
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn overlay_translate() {}
+
+#[cfg(target_os = "windows")]
+pub fn overlay_hotkey() {
+    let app_handle = APP.get().unwrap();
+    match app_handle.get_window("overlay") {
+        Some(window) => {
+            let _ = window.show();
+            let _ = window.emit("overlay_toggle_edit", ());
+        }
+        None => overlay_translate(),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn overlay_hotkey() {}
+
+#[cfg(target_os = "windows")]
+pub fn overlay_refresh_hotkey() {
+    let app_handle = APP.get().unwrap();
+    if let Some(window) = app_handle.get_window("overlay") {
+        let _ = window.emit("overlay_refresh", ());
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn overlay_refresh_hotkey() {}
+
+#[cfg(target_os = "windows")]
+fn close_overlay_window(app_handle: &tauri::AppHandle) {
+    if let Some(window) = app_handle.get_window("overlay") {
+        let _ = window.close();
+        for _ in 0..20 {
+            if app_handle.get_window("overlay").is_none() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
+    let app_handle = APP.get().unwrap();
+    close_overlay_window(app_handle);
+
+    let window = tauri::WindowBuilder::new(
+        app_handle,
+        "overlay",
+        tauri::WindowUrl::App("index.html".into()),
+    )
+    .title("Overlay")
+    .additional_browser_args("--disable-web-security")
+    .transparent(true)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .focused(false)
+    .visible(false)
+    .resizable(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    window
+        .set_position(tauri::PhysicalPosition::new(state.screen_x, state.screen_y))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(tauri::PhysicalSize::new(state.width, state.height))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_ignore_cursor_events(true)
+        .map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    set_shadow(&window, false).unwrap_or_default();
+
+    Ok(window)
+}
+
+#[tauri::command]
+#[cfg(target_os = "windows")]
+pub fn get_overlay_state() -> Result<OverlayState, String> {
+    OVERLAY_STATE
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "overlay state not found".to_string())
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "windows"))]
+pub fn get_overlay_state() -> Result<OverlayState, String> {
+    Err("only windows".to_string())
+}
+
+fn overlay_ocr_lang() -> String {
+    get("recognize_language")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "auto".to_string())
+}
+
+fn overlay_service_instance() -> String {
+    if let Some(service) = get("overlay_service_instance").and_then(|v| v.as_str().map(|s| s.to_string())) {
+        if !service.is_empty() {
+            return service;
+        }
+    }
+    get("translate_service_list")
+        .and_then(|v| v.as_array().and_then(|list| list.first().cloned()))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_default()
+}
+
+fn overlay_target_language() -> String {
+    if let Some(lang) = get("overlay_target_language").and_then(|v| v.as_str().map(|s| s.to_string())) {
+        if !lang.is_empty() {
+            return lang;
+        }
+    }
+    get("translate_target_language")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "zh_cn".to_string())
 }

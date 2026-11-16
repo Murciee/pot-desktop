@@ -1,0 +1,84 @@
+import { BaseDirectory, readTextFile } from '@tauri-apps/api/fs';
+
+import * as builtinServices from '../services/translate';
+import { invoke_plugin } from './invoke_plugin';
+import { getServiceName, whetherPluginService } from './service_instance';
+import { store } from './store';
+
+let storeReady = null;
+const cache = new Map();
+const pluginInfoCache = new Map();
+
+function ensureStore() {
+    if (!storeReady) {
+        storeReady = store.load();
+    }
+    return storeReady;
+}
+
+async function getPluginInfo(serviceName) {
+    if (!pluginInfoCache.has(serviceName)) {
+        const infoStr = await readTextFile(`plugins/translate/${serviceName}/info.json`, {
+            dir: BaseDirectory.AppConfig,
+        });
+        pluginInfoCache.set(serviceName, JSON.parse(infoStr));
+    }
+    return pluginInfoCache.get(serviceName);
+}
+
+async function doTranslate(instanceKey, text, from, to, detectLang) {
+    await ensureStore();
+    const serviceName = getServiceName(instanceKey);
+    const config = (await store.get(instanceKey)) ?? {};
+
+    if (whetherPluginService(instanceKey)) {
+        const pluginInfo = await getPluginInfo(serviceName);
+        const language = pluginInfo.language ?? {};
+        const fromLang = language[from] ?? from;
+        const toLang = language[to] ?? to;
+        const [func, utils] = await invoke_plugin('translate', serviceName);
+        return await func(text, fromLang, toLang, {
+            config,
+            detect: detectLang,
+            setResult: () => {},
+            utils,
+        });
+    }
+
+    const service = builtinServices[serviceName];
+    if (!service) {
+        throw new Error(`Unknown translate service: ${serviceName}`);
+    }
+    const language = service.Language ?? {};
+    return await service.translate(text, language[from] ?? from, language[to] ?? to, {
+        config,
+        detect: detectLang,
+        setResult: () => {},
+    });
+}
+
+/**
+ * Translate one text block with a builtin or plugin translate service instance.
+ * Results are cached in memory by instance + languages + text.
+ */
+export async function translateWithService(instanceKey, text, from, to, detectLang = from) {
+    const key = `${instanceKey}\u0000${from}\u0000${to}\u0000${text}`;
+    if (cache.has(key)) {
+        return await cache.get(key);
+    }
+
+    const promise = doTranslate(instanceKey, text, from, to, detectLang);
+    cache.set(key, promise);
+    try {
+        const result = await promise;
+        cache.set(key, Promise.resolve(result));
+        return result;
+    } catch (e) {
+        cache.delete(key);
+        throw e;
+    }
+}
+
+export function clearTranslateCache() {
+    cache.clear();
+}

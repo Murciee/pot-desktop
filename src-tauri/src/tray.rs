@@ -4,6 +4,7 @@ use crate::window::config_window;
 use crate::window::input_translate;
 use crate::window::ocr_recognize;
 use crate::window::ocr_translate;
+use crate::window::overlay_translate;
 use crate::window::updater_window;
 use log::info;
 use tauri::CustomMenuItem;
@@ -109,6 +110,7 @@ pub fn tray_event_handler<'a>(app: &'a AppHandle, event: SystemTrayEvent) {
             "copy_disable" => on_auto_copy_click(app, "disable"),
             "ocr_recognize" => on_ocr_recognize_click(),
             "ocr_translate" => on_ocr_translate_click(),
+            "overlay_translate" => on_overlay_translate_click(),
             "config" => on_config_click(),
             "check_update" => on_check_update_click(),
             "view_log" => on_view_log_click(app),
@@ -180,6 +182,9 @@ fn on_ocr_recognize_click() {
 fn on_ocr_translate_click() {
     ocr_translate();
 }
+fn on_overlay_translate_click() {
+    overlay_translate();
+}
 
 fn on_config_click() {
     config_window();
@@ -232,6 +237,7 @@ fn tray_menu_en() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -271,6 +277,7 @@ fn tray_menu_zh_cn() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "覆盖翻译"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -310,6 +317,7 @@ fn tray_menu_zh_tw() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "覆蓋翻譯"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -349,6 +357,7 @@ fn tray_menu_ja() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -388,6 +397,7 @@ fn tray_menu_ko() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -428,6 +438,7 @@ fn tray_menu_fr() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -466,6 +477,7 @@ fn tray_menu_de() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -505,6 +517,7 @@ fn tray_menu_ru() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -544,6 +557,7 @@ fn tray_menu_fa() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -584,6 +598,7 @@ fn tray_menu_pt_br() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)
@@ -623,6 +638,7 @@ fn tray_menu_uk() -> tauri::SystemTrayMenu {
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(ocr_recognize)
         .add_item(ocr_translate)
+        .add_item(CustomMenuItem::new("overlay_translate", "Overlay Translate"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(config)
         .add_item(check_update)

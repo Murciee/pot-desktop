@@ -3,6 +3,32 @@ import { osType } from '../../../utils/env';
 import { invoke } from '@tauri-apps/api';
 import { Language } from './info';
 
+const windowsLangMap = {
+    auto: 'auto',
+    zh_cn: 'zh-CN',
+    zh_tw: 'zh-TW',
+    en: 'en-US',
+    yue: 'zh-HK',
+    ja: 'ja-JP',
+    ko: 'ko-KR',
+    fr: 'fr-FR',
+    es: 'es-ES',
+    ru: 'ru-RU',
+    de: 'de-DE',
+    it: 'it-IT',
+    tr: 'tr-TR',
+    pt: 'pt-PT',
+    pt_br: 'pt-BR',
+    vi: 'vi-VN',
+    id: 'id-ID',
+    th: 'th-TH',
+    ms: 'ms-MY',
+    ar: 'ar-SA',
+    hi: 'hi-IN',
+    uk: 'uk-UA',
+    he: 'he-IL',
+};
+
 export async function recognize(_, lang) {
     const linuxLangMap = {
         auto: 'auto',
@@ -28,31 +54,6 @@ export async function recognize(_, lang) {
         hi: 'hin',
         uk: 'ukr',
         he: 'heb',
-    };
-    const windowsLangMap = {
-        auto: 'auto',
-        zh_cn: 'zh-CN',
-        zh_tw: 'zh-TW',
-        en: 'en-US',
-        yue: 'zh-HK',
-        ja: 'ja-JP',
-        ko: 'ko-KR',
-        fr: 'fr-FR',
-        es: 'es-ES',
-        ru: 'ru-RU',
-        de: 'de-DE',
-        it: 'it-IT',
-        tr: 'tr-TR',
-        pt: 'pt-PT',
-        pt_br: 'pt-BR',
-        vi: 'vi-VN',
-        id: 'id-ID',
-        th: 'th-TH',
-        ms: 'ms-MY',
-        ar: 'ar-SA',
-        hi: 'hi-IN',
-        uk: 'uk-UA',
-        he: 'he-IL',
     };
     const macOSLangMap = {
         auto: 'auto',
@@ -105,6 +106,13 @@ export async function recognize(_, lang) {
             }
             return result.trim();
     }
+}
+
+export async function recognizeWithBoxes(lang) {
+    if (osType !== 'Windows_NT') {
+        throw new Error('only windows');
+    }
+    return await invoke('system_ocr_boxes', { lang: windowsLangMap[lang] ?? 'auto' });
 }
 
 export * from './Config';

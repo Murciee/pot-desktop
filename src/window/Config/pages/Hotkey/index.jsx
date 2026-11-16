@@ -50,6 +50,9 @@ export default function Hotkey() {
     const [inputTranslate, setInputTranslate] = useConfig('hotkey_input_translate', '');
     const [ocrRecognize, setOcrRecognize] = useConfig('hotkey_ocr_recognize', '');
     const [ocrTranslate, setOcrTranslate] = useConfig('hotkey_ocr_translate', '');
+    const [overlayTranslate, setOverlayTranslate] = useConfig('hotkey_overlay_translate', '');
+    const [overlayRefresh, setOverlayRefresh] = useConfig('hotkey_overlay_refresh', '');
+    const [lastWindow, setLastWindow] = useConfig('hotkey_last_window', '');
 
     const { t } = useTranslation();
     const toastStyle = useToastStyle();
@@ -233,6 +236,99 @@ export default function Hotkey() {
                                     className={`${ocrTranslate === '' && 'hidden'}`}
                                     onPress={() => {
                                         registerHandler('hotkey_ocr_translate', ocrTranslate);
+                                    }}
+                                >
+                                    {t('common.ok')}
+                                </Button>
+                            }
+                        />
+                    )}
+                </div>
+                <div className='config-item'>
+                    <h3 className='my-auto'>{t('config.hotkey.overlay_translate')}</h3>
+                    {overlayTranslate !== null && (
+                        <Input
+                            type='hotkey'
+                            variant='bordered'
+                            value={overlayTranslate}
+                            label={t('config.hotkey.set_hotkey')}
+                            className='max-w-[50%]'
+                            onKeyDown={(e) => {
+                                keyDown(e, setOverlayTranslate);
+                            }}
+                            onFocus={() => {
+                                unregister(overlayTranslate);
+                                setOverlayTranslate('');
+                            }}
+                            endContent={
+                                <Button
+                                    size='sm'
+                                    variant='flat'
+                                    className={`${overlayTranslate === '' && 'hidden'}`}
+                                    onPress={() => {
+                                        registerHandler('hotkey_overlay_translate', overlayTranslate);
+                                    }}
+                                >
+                                    {t('common.ok')}
+                                </Button>
+                            }
+                        />
+                    )}
+                </div>
+                <div className='config-item'>
+                    <h3 className='my-auto'>{t('config.hotkey.overlay_refresh')}</h3>
+                    {overlayRefresh !== null && (
+                        <Input
+                            type='hotkey'
+                            variant='bordered'
+                            value={overlayRefresh}
+                            label={t('config.hotkey.set_hotkey')}
+                            className='max-w-[50%]'
+                            onKeyDown={(e) => {
+                                keyDown(e, setOverlayRefresh);
+                            }}
+                            onFocus={() => {
+                                unregister(overlayRefresh);
+                                setOverlayRefresh('');
+                            }}
+                            endContent={
+                                <Button
+                                    size='sm'
+                                    variant='flat'
+                                    className={`${overlayRefresh === '' && 'hidden'}`}
+                                    onPress={() => {
+                                        registerHandler('hotkey_overlay_refresh', overlayRefresh);
+                                    }}
+                                >
+                                    {t('common.ok')}
+                                </Button>
+                            }
+                        />
+                    )}
+                </div>
+                <div className='config-item'>
+                    <h3 className='my-auto'>{t('config.hotkey.last_window')}</h3>
+                    {lastWindow !== null && (
+                        <Input
+                            type='hotkey'
+                            variant='bordered'
+                            value={lastWindow}
+                            label={t('config.hotkey.set_hotkey')}
+                            className='max-w-[50%]'
+                            onKeyDown={(e) => {
+                                keyDown(e, setLastWindow);
+                            }}
+                            onFocus={() => {
+                                unregister(lastWindow);
+                                setLastWindow('');
+                            }}
+                            endContent={
+                                <Button
+                                    size='sm'
+                                    variant='flat'
+                                    className={`${lastWindow === '' && 'hidden'}`}
+                                    onPress={() => {
+                                        registerHandler('hotkey_last_window', lastWindow);
                                     }}
                                 >
                                     {t('common.ok')}

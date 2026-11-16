@@ -90,6 +90,16 @@ export default function Screenshot() {
                         await appWindow.close();
                     } else {
                         await invoke('cut_image', { left, top, width, height });
+                        const monitor = await currentMonitor();
+                        await emit('overlay_rect', {
+                            left,
+                            top,
+                            width,
+                            height,
+                            dpr: dpi,
+                            screenX: monitor.position.x + left,
+                            screenY: monitor.position.y + top,
+                        });
                         await emit('success');
                         await appWindow.close();
                     }

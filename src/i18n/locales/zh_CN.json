@@ -133,7 +133,19 @@
                 "google": "谷歌",
                 "bing": "必应",
                 "yandex": "Yandex",
-                "local": "本地"
+                "local": "本地",
+                "overlay_title": "覆盖翻译",
+                "overlay_only_windows": "覆盖翻译仅支持 Windows。",
+                "overlay_service": "服务实例",
+                "overlay_service_follow": "跟随翻译窗口（第一个实例）",
+                "overlay_target_language": "目标语言",
+                "overlay_target_follow": "跟随翻译设置",
+                "overlay_opacity": "背景不透明度",
+                "overlay_font_scale": "字号比例",
+                "overlay_concurrency": "最大并发",
+                "overlay_refresh_hotkey": "刷新快捷键",
+                "overlay_hotkey_hint": "在快捷键设置页配置",
+                "overlay_go_hotkey": "打开快捷键设置"
             },
             "recognize": {
                 "label": "文字识别",
@@ -151,6 +163,9 @@
                 "input_translate": "输入翻译",
                 "ocr_recognize": "文字识别",
                 "ocr_translate": "截图翻译",
+                "overlay_translate": "覆盖翻译",
+                "overlay_refresh": "刷新覆盖翻译",
+                "last_window": "上次翻译窗口",
                 "is_register": "快捷键已被注册",
                 "success": "快捷键注册成功",
                 "set_hotkey": "按下按键设置快捷键"
@@ -479,6 +494,19 @@
                     "token": "Token"
                 }
             }
+        },
+        "overlay": {
+            "refresh": "刷新",
+            "lock": "锁定",
+            "close": "关闭",
+            "original": "原文",
+            "translation": "译文",
+            "no_text": "选区未识别到文字",
+            "ocr_failed": "文字识别失败：",
+            "no_service": "未配置翻译服务，请前往设置添加",
+            "partial_failed": "部分段落翻译失败，已显示原文",
+            "all_failed": "翻译失败，请检查服务配置",
+            "refresh_failed": "刷新失败："
         },
         "translate": {
             "translate": "翻译",

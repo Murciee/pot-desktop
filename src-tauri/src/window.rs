@@ -144,18 +144,22 @@ pub fn config_window() {
     window
         .set_min_size(Some(tauri::LogicalSize::new(800, 400)))
         .unwrap();
-    let width = get("config_window_width")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(800);
-    let height = get("config_window_height")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(600);
-    window
-        .set_size(tauri::LogicalSize::new(width as f64, height as f64))
-        .unwrap();
-
     let monitor = window.current_monitor().unwrap().unwrap();
     let dpi = monitor.scale_factor();
+    let max_width = monitor.size().width as f64 / dpi;
+    let max_height = monitor.size().height as f64 / dpi;
+    let width = (get("config_window_width")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(800) as f64)
+        .min(max_width);
+    let height = (get("config_window_height")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(600) as f64)
+        .min(max_height);
+    window
+        .set_size(tauri::LogicalSize::new(width, height))
+        .unwrap();
+
     match (
         get("config_window_position_x").and_then(|v| v.as_i64()),
         get("config_window_position_y").and_then(|v| v.as_i64()),
@@ -374,11 +378,10 @@ pub fn recognize_window() {
     };
     let monitor = window.current_monitor().unwrap().unwrap();
     let dpi = monitor.scale_factor();
+    let width = (width as f64).min(monitor.size().width as f64 / dpi);
+    let height = (height as f64).min(monitor.size().height as f64 / dpi);
     window
-        .set_size(tauri::PhysicalSize::new(
-            (width as f64) * dpi,
-            (height as f64) * dpi,
-        ))
+        .set_size(tauri::PhysicalSize::new(width * dpi, height * dpi))
         .unwrap();
     match (
         get("recognize_window_position_x").and_then(|v| v.as_i64()),

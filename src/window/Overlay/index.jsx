@@ -55,6 +55,7 @@ export default function Overlay() {
     }, [overlayFontScale]);
 
     useEffect(() => {
+        document.documentElement.style.borderRadius = '0';
         const onResize = () => {
             setViewport({ width: window.innerWidth, height: window.innerHeight });
         };

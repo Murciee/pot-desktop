@@ -1,4 +1,4 @@
-import { Input, Button, Switch, Textarea, Card, CardBody, Link } from '@nextui-org/react';
+import { Input, Button, Switch, Textarea } from '@nextui-org/react';
 import { DropdownTrigger } from '@nextui-org/react';
 import { MdDeleteOutline } from 'react-icons/md';
 import { DropdownMenu } from '@nextui-org/react';
@@ -7,20 +7,30 @@ import toast, { Toaster } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { Dropdown } from '@nextui-org/react';
 import { open } from '@tauri-apps/api/shell';
-import React, { useState } from 'react';
+import { fetch as httpFetch } from '@tauri-apps/api/http';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { useConfig } from '../../../hooks/useConfig';
 import { useToastStyle } from '../../../hooks';
 import { translate } from './index';
-import { Language } from './index';
+import { Language } from './info';
 import { INSTANCE_NAME_CONFIG_KEY } from '../../../utils/service_instance';
+import { defaultPromptList, defaultRequestArguments, modelsUrlFrom } from './utils';
 
-export const defaultRequestArguments = JSON.stringify({
-    temperature: 0.1,
-    top_p: 0.99,
-    frequency_penalty: 0,
-    presence_penalty: 0,
-});
+export { defaultRequestArguments };
+
+const PRESETS = [
+    { key: 'openai', url: 'https://api.openai.com/v1/chat/completions' },
+    { key: 'deepseek', url: 'https://api.deepseek.com/v1/chat/completions' },
+    { key: 'moonshot', url: 'https://api.moonshot.cn/v1/chat/completions' },
+    { key: 'zhipu', url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions' },
+    { key: 'siliconflow', url: 'https://api.siliconflow.cn/v1/chat/completions' },
+    { key: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions' },
+    { key: 'ollama', url: 'http://localhost:11434/v1/chat/completions' },
+    { key: 'oneapi', url: 'http://localhost:3000/v1/chat/completions' },
+];
+
+const NON_CHAT_MODEL = /(embed|whisper|tts|dall-?e|moderation|rerank)/i;
 
 export function Config(props) {
     const { instanceKey, updateServiceList, onClose } = props;
@@ -34,63 +44,164 @@ export function Config(props) {
             model: 'gpt-3.5-turbo',
             apiKey: '',
             stream: false,
-            promptList: [
-                {
-                    role: 'system',
-                    content:
-                        'You are a professional translation engine, please translate the text into a colloquial, professional, elegant and fluent content, without the style of machine translation. You must only translate the text content, never interpret it.',
-                },
-                { role: 'user', content: `Translate into $to:\n"""\n$text\n"""` },
-            ],
+            promptList: defaultPromptList,
             requestArguments: defaultRequestArguments,
+            modelList: [],
+            modelListUpdatedAt: 0,
         },
         { sync: false }
     );
-    // 兼容旧版本
-    if (openaiConfig) {
-        if (openaiConfig.promptList === undefined) {
-            setOpenaiConfig({
-                ...openaiConfig,
-                promptList: [
-                    {
-                        role: 'system',
-                        content:
-                            'You are a professional translation engine, please translate the text into a colloquial, professional, elegant and fluent content, without the style of machine translation. You must only translate the text content, never interpret it.',
-                    },
-                    { role: 'user', content: `Translate into $to:\n"""\n$text\n"""` },
-                ],
-            });
-        }
-        if (openaiConfig.requestArguments === undefined) {
-            setOpenaiConfig({
-                ...openaiConfig,
-                requestArguments: defaultRequestArguments,
-            });
-        }
-    }
+    const [isTesting, setIsTesting] = useState(false);
+    const [fetchingModels, setFetchingModels] = useState(false);
+    const [advanced, setAdvanced] = useState(false);
+    const [testResult, setTestResult] = useState(null);
 
-    const [isLoading, setIsLoading] = useState(false);
+    // 兼容旧版本
+    useEffect(() => {
+        if (openaiConfig) {
+            const patch = {};
+            if (openaiConfig.promptList === undefined) {
+                patch.promptList = defaultPromptList;
+            }
+            if (openaiConfig.requestArguments === undefined) {
+                patch.requestArguments = defaultRequestArguments;
+            }
+            if (openaiConfig.modelList === undefined) {
+                patch.modelList = [];
+            }
+            if (openaiConfig.modelListUpdatedAt === undefined) {
+                patch.modelListUpdatedAt = 0;
+            }
+            if (Object.keys(patch).length > 0) {
+                setOpenaiConfig({ ...openaiConfig, ...patch });
+            }
+        }
+    }, [openaiConfig]);
 
     const toastStyle = useToastStyle();
+
+    const requestArgumentsError = useMemo(() => {
+        if (!openaiConfig) {
+            return '';
+        }
+        try {
+            const parsed = JSON.parse(openaiConfig.requestArguments ?? defaultRequestArguments);
+            if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return t('services.translate.openai.json_object_required');
+            }
+            return '';
+        } catch {
+            return t('services.translate.openai.invalid_json');
+        }
+    }, [openaiConfig?.requestArguments, t]);
+
+    const userPromptCount = (openaiConfig?.promptList ?? []).filter((item) => item.role === 'user').length;
+    const promptError = userPromptCount === 0 ? t('services.translate.openai.at_least_one_user') : '';
+    const canSave = requestArgumentsError === '' && promptError === '';
+
+    const updateConfig = (patch) => {
+        setOpenaiConfig({ ...openaiConfig, ...patch });
+    };
+
+    const invalidateModels = (patch) => {
+        updateConfig({ ...patch, modelList: [], modelListUpdatedAt: 0 });
+    };
+
+    const currentPreset = PRESETS.find((item) => item.url === openaiConfig?.requestPath);
+
+    const filteredModels = (openaiConfig?.modelList ?? []).filter((model) => {
+        const keyword = (openaiConfig?.model ?? '').trim().toLowerCase();
+        return keyword === '' || model.toLowerCase().includes(keyword);
+    });
+
+    const handleFetchModels = async () => {
+        if (!openaiConfig.apiKey) {
+            toast.error(t('services.translate.openai.api_key_required'), { style: toastStyle });
+            return;
+        }
+        setFetchingModels(true);
+        try {
+            const res = await httpFetch(modelsUrlFrom(openaiConfig.requestPath), {
+                method: 'GET',
+                headers: {
+                    Authorization: `Bearer ${openaiConfig.apiKey}`,
+                },
+                timeout: 15,
+            });
+            if (!res.ok) {
+                if (res.status === 401) {
+                    throw new Error('401');
+                }
+                if (res.status === 404) {
+                    throw new Error('404');
+                }
+                throw new Error(t('services.translate.openai.models_http_error', { status: res.status }));
+            }
+            const data = res.data ?? {};
+            const rawList = Array.isArray(data.data) ? data.data : Array.isArray(data.models) ? data.models : [];
+            const modelList = rawList
+                .map((item) => (typeof item === 'string' ? item : item?.id ?? item?.name))
+                .filter((item) => typeof item === 'string' && item !== '');
+            if (modelList.length === 0) {
+                throw new Error(t('services.translate.openai.models_empty'));
+            }
+            updateConfig({ modelList, modelListUpdatedAt: Date.now() });
+            toast.success(t('services.translate.openai.models_fetched', { count: modelList.length }), {
+                style: toastStyle,
+            });
+        } catch (e) {
+            const message = e?.message ?? e?.toString() ?? '';
+            let hint = message;
+            if (message.includes('401')) {
+                hint = t('services.translate.openai.models_401');
+            } else if (message.includes('404')) {
+                hint = t('services.translate.openai.models_404');
+            } else if (/timeout|timed out|超时/i.test(message)) {
+                hint = t('services.translate.openai.models_timeout');
+            }
+            toast.error(hint, { style: toastStyle, duration: 6000 });
+        } finally {
+            setFetchingModels(false);
+        }
+    };
+
+    const handleTest = async () => {
+        if (!canSave) {
+            return;
+        }
+        setIsTesting(true);
+        setTestResult(null);
+        const start = Date.now();
+        try {
+            const result = await translate('hello', Language.auto, Language.zh_cn, { config: openaiConfig });
+            const elapsed = Date.now() - start;
+            const text = typeof result === 'string' ? result.trim() : JSON.stringify(result);
+            setTestResult({
+                ok: true,
+                text: t('services.translate.openai.test_success', {
+                    ms: elapsed,
+                    text: text.slice(0, 60),
+                }),
+            });
+        } catch (e) {
+            setTestResult({ ok: false, text: e?.toString() ?? String(e) });
+            toast.error(t('config.service.test_failed') + (e?.toString() ?? String(e)), { style: toastStyle });
+        } finally {
+            setIsTesting(false);
+        }
+    };
 
     return (
         openaiConfig !== null && (
             <form
                 onSubmit={(e) => {
                     e.preventDefault();
-                    setIsLoading(true);
-                    translate('hello', Language.auto, Language.zh_cn, { config: openaiConfig }).then(
-                        () => {
-                            setIsLoading(false);
-                            setOpenaiConfig(openaiConfig, true);
-                            updateServiceList(instanceKey);
-                            onClose();
-                        },
-                        (e) => {
-                            setIsLoading(false);
-                            toast.error(t('config.service.test_failed') + e.toString(), { style: toastStyle });
-                        }
-                    );
+                    if (!canSave) {
+                        return;
+                    }
+                    setOpenaiConfig(openaiConfig, true);
+                    updateServiceList(instanceKey);
+                    onClose();
                 }}
             >
                 <Toaster />
@@ -106,10 +217,7 @@ export function Config(props) {
                             mainWrapper: 'max-w-[50%]',
                         }}
                         onValueChange={(value) => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                [INSTANCE_NAME_CONFIG_KEY]: value,
-                            });
+                            updateConfig({ [INSTANCE_NAME_CONFIG_KEY]: value });
                         }}
                     />
                 </div>
@@ -133,10 +241,7 @@ export function Config(props) {
                             autoFocus='first'
                             aria-label='service'
                             onAction={(key) => {
-                                setOpenaiConfig({
-                                    ...openaiConfig,
-                                    service: key,
-                                });
+                                updateConfig({ service: key });
                             }}
                         >
                             <DropdownItem key='openai'>{t(`services.translate.openai.openai`)}</DropdownItem>
@@ -144,22 +249,39 @@ export function Config(props) {
                         </DropdownMenu>
                     </Dropdown>
                 </div>
-                <div className='config-item'>
-                    <Switch
-                        isSelected={openaiConfig['stream']}
-                        onValueChange={(value) => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                stream: value,
-                            });
-                        }}
-                        classNames={{
-                            base: 'flex flex-row-reverse justify-between w-full max-w-full',
-                        }}
-                    >
-                        {t('services.translate.openai.stream')}
-                    </Switch>
-                </div>
+                {openaiConfig.service === 'openai' && (
+                    <div className='config-item'>
+                        <h3 className='my-auto'>{t('services.translate.openai.preset')}</h3>
+                        <Dropdown>
+                            <DropdownTrigger>
+                                <Button variant='bordered'>
+                                    {currentPreset
+                                        ? t(`services.translate.openai.preset_${currentPreset.key}`)
+                                        : t('services.translate.openai.preset_custom')}
+                                </Button>
+                            </DropdownTrigger>
+                            <DropdownMenu
+                                aria-label='provider preset'
+                                className='max-h-[40vh] overflow-y-auto'
+                                onAction={(key) => {
+                                    const preset = PRESETS.find((item) => item.key === key);
+                                    if (preset) {
+                                        invalidateModels({
+                                            requestPath: preset.url,
+                                            model: '',
+                                        });
+                                    }
+                                }}
+                            >
+                                {PRESETS.map((preset) => (
+                                    <DropdownItem key={preset.key}>
+                                        {t(`services.translate.openai.preset_${preset.key}`)}
+                                    </DropdownItem>
+                                ))}
+                            </DropdownMenu>
+                        </Dropdown>
+                    </div>
+                )}
                 <div className='config-item'>
                     <Input
                         label={t('services.translate.openai.request_path')}
@@ -172,10 +294,7 @@ export function Config(props) {
                             mainWrapper: 'max-w-[50%]',
                         }}
                         onValueChange={(value) => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                requestPath: value,
-                            });
+                            invalidateModels({ requestPath: value });
                         }}
                     />
                 </div>
@@ -192,157 +311,228 @@ export function Config(props) {
                             mainWrapper: 'max-w-[50%]',
                         }}
                         onValueChange={(value) => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                apiKey: value,
-                            });
+                            invalidateModels({ apiKey: value });
                         }}
                     />
                 </div>
-                <Card
-                    isBlurred
-                    className='border-none bg-success/20 dark:bg-success/10'
-                    shadow='sm'
-                >
-                    <CardBody>
-                        <div>
-                            推荐
-                            <Link
-                                isExternal
-                                href='https://aihubmix.com/register?aff=trJY'
-                                color='primary'
-                            >
-                                AiHubMix
-                            </Link>
-                            的OpenAI API 密钥，速度飞快，经济实惠，1美元的OpenAI API 额度只需人民币6.3元
-                            <Link
-                                isExternal
-                                href='https://pot-app.com/ads/aihubmix.html'
-                                color='primary'
-                            >
-                                配置文档
-                            </Link>
-                        </div>
-                    </CardBody>
-                </Card>
                 <div className={`config-item ${openaiConfig.service === 'azure' && 'hidden'}`}>
-                    <Input
-                        label={t('services.translate.openai.model')}
-                        labelPlacement='outside-left'
-                        value={openaiConfig['model']}
-                        variant='bordered'
-                        classNames={{
-                            base: 'justify-between',
-                            label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-[50%]',
-                        }}
-                        onValueChange={(value) => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                model: value,
-                            });
-                        }}
-                    />
+                    <h3 className='my-auto'>{t('services.translate.openai.model')}</h3>
+                    <div className='flex items-center gap-2 w-[50%]'>
+                        <Input
+                            aria-label={t('services.translate.openai.model')}
+                            value={openaiConfig['model']}
+                            variant='bordered'
+                            placeholder='gpt-4o-mini'
+                            classNames={{
+                                base: 'flex-1',
+                                mainWrapper: 'w-full',
+                            }}
+                            onValueChange={(value) => {
+                                updateConfig({ model: value });
+                            }}
+                        />
+                        <Button
+                            variant='bordered'
+                            isLoading={fetchingModels}
+                            onPress={handleFetchModels}
+                        >
+                            {t('services.translate.openai.fetch_models')}
+                        </Button>
+                    </div>
                 </div>
-                <h3 className='my-auto'>Prompt List</h3>
-                <p className='text-[10px] text-default-700'>{t('services.translate.openai.prompt_description')}</p>
-
-                <div className='bg-content2 rounded-[10px] p-3'>
-                    {openaiConfig.promptList &&
-                        openaiConfig.promptList.map((prompt, index) => {
+                {(openaiConfig.modelList ?? []).length > 0 && openaiConfig.service !== 'azure' && (
+                    <div className='bg-content2 rounded-[10px] p-2 max-h-[180px] overflow-y-auto'>
+                        <div className='flex justify-between px-2 pb-1 text-[10px] text-default-500'>
+                            <span>
+                                {t('services.translate.openai.models_count', {
+                                    count: openaiConfig.modelList.length,
+                                })}
+                            </span>
+                            <span>
+                                {openaiConfig.modelListUpdatedAt
+                                    ? t('services.translate.openai.models_updated', {
+                                          time: new Date(openaiConfig.modelListUpdatedAt).toLocaleTimeString(),
+                                      })
+                                    : ''}
+                            </span>
+                        </div>
+                        {filteredModels.length === 0 && (
+                            <div className='px-2 py-1 text-[12px] text-default-500'>
+                                {t('services.translate.openai.models_no_match')}
+                            </div>
+                        )}
+                        {filteredModels.map((model) => {
+                            const nonChat = NON_CHAT_MODEL.test(model);
                             return (
-                                <div className='config-item'>
-                                    <Textarea
-                                        label={prompt.role}
-                                        labelPlacement='outside'
-                                        variant='faded'
-                                        value={prompt.content}
-                                        placeholder={`Input Some ${prompt.role} Prompt`}
-                                        onValueChange={(value) => {
-                                            setOpenaiConfig({
-                                                ...openaiConfig,
-                                                promptList: openaiConfig.promptList.map((p, i) => {
-                                                    if (i === index) {
-                                                        if (i === 0) {
-                                                            return {
-                                                                role: 'system',
-                                                                content: value,
-                                                            };
-                                                        } else {
-                                                            return {
-                                                                role: index % 2 !== 0 ? 'user' : 'assistant',
-                                                                content: value,
-                                                            };
-                                                        }
-                                                    } else {
-                                                        return p;
-                                                    }
-                                                }),
-                                            });
-                                        }}
-                                    />
-                                    <Button
-                                        isIconOnly
-                                        color='danger'
-                                        className='my-auto mx-1'
-                                        variant='flat'
-                                        onPress={() => {
-                                            setOpenaiConfig({
-                                                ...openaiConfig,
-                                                promptList: openaiConfig.promptList.filter((_, i) => i !== index),
-                                            });
-                                        }}
-                                    >
-                                        <MdDeleteOutline className='text-[18px]' />
-                                    </Button>
+                                <div
+                                    key={model}
+                                    className={`flex justify-between items-center px-2 py-1 rounded-[6px] text-[12px] ${
+                                        nonChat
+                                            ? 'text-default-400 cursor-not-allowed'
+                                            : 'cursor-pointer hover:bg-content3'
+                                    } ${openaiConfig.model === model ? 'bg-content3' : ''}`}
+                                    onClick={() => {
+                                        if (!nonChat) {
+                                            updateConfig({ model });
+                                        }
+                                    }}
+                                >
+                                    <span className='break-all'>{model}</span>
+                                    {nonChat && (
+                                        <span className='ml-2 shrink-0'>
+                                            {t('services.translate.openai.non_chat_model')}
+                                        </span>
+                                    )}
                                 </div>
                             );
                         })}
+                    </div>
+                )}
+                <div className='config-item'>
+                    <h3 className='my-auto'>{t('services.translate.openai.test_connection')}</h3>
                     <Button
-                        fullWidth
-                        onPress={() => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                promptList: [
-                                    ...openaiConfig.promptList,
-                                    {
-                                        role:
-                                            openaiConfig.promptList.length === 0
-                                                ? 'system'
-                                                : openaiConfig.promptList.length % 2 === 0
-                                                  ? 'assistant'
-                                                  : 'user',
-                                        content: '',
-                                    },
-                                ],
-                            });
-                        }}
+                        variant='bordered'
+                        isLoading={isTesting}
+                        isDisabled={!canSave}
+                        onPress={handleTest}
                     >
-                        {t('services.translate.openai.add')}
+                        {t('services.translate.openai.test_connection')}
                     </Button>
                 </div>
-                <br />
-
-                <h3 className='my-auto'>Request Arguments</h3>
+                {testResult && (
+                    <p className={`text-[12px] break-all ${testResult.ok ? 'text-green-500' : 'text-red-500'}`}>
+                        {testResult.text}
+                    </p>
+                )}
                 <div className='config-item'>
-                    <Textarea
-                        label=''
-                        labelPlacement='outside'
-                        variant='faded'
-                        value={openaiConfig['requestArguments']}
-                        placeholder={`Input API Request Arguments`}
-                        onValueChange={(value) => {
-                            setOpenaiConfig({
-                                ...openaiConfig,
-                                requestArguments: value,
-                            });
-                        }}
-                    />
+                    <Button
+                        fullWidth
+                        variant='flat'
+                        onPress={() => setAdvanced(!advanced)}
+                    >
+                        {advanced
+                            ? t('services.translate.openai.hide_advanced')
+                            : t('services.translate.openai.advanced')}
+                    </Button>
                 </div>
-                <br />
+                {advanced && (
+                    <>
+                        <div className='config-item'>
+                            <Switch
+                                isSelected={openaiConfig['stream']}
+                                onValueChange={(value) => {
+                                    updateConfig({ stream: value });
+                                }}
+                                classNames={{
+                                    base: 'flex flex-row-reverse justify-between w-full max-w-full',
+                                }}
+                            >
+                                {t('services.translate.openai.stream')}
+                            </Switch>
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto'>Prompt List</h3>
+                            <Button
+                                size='sm'
+                                variant='bordered'
+                                onPress={() => updateConfig({ promptList: defaultPromptList })}
+                            >
+                                {t('services.translate.openai.restore_default_prompt')}
+                            </Button>
+                        </div>
+                        <p className='text-[10px] text-default-700'>
+                            {t('services.translate.openai.prompt_description')}
+                        </p>
+
+                        <div className='bg-content2 rounded-[10px] p-3'>
+                            {openaiConfig.promptList &&
+                                openaiConfig.promptList.map((prompt, index) => {
+                                    const isLastUser =
+                                        prompt.role === 'user' && userPromptCount <= 1;
+                                    return (
+                                        <div
+                                            className='config-item'
+                                            key={index}
+                                        >
+                                            <Textarea
+                                                label={prompt.role}
+                                                labelPlacement='outside'
+                                                variant='faded'
+                                                value={prompt.content}
+                                                placeholder={`Input Some ${prompt.role} Prompt`}
+                                                onValueChange={(value) => {
+                                                    updateConfig({
+                                                        promptList: openaiConfig.promptList.map((p, i) =>
+                                                            i === index ? { ...p, content: value } : p
+                                                        ),
+                                                    });
+                                                }}
+                                            />
+                                            <Button
+                                                isIconOnly
+                                                color='danger'
+                                                className='my-auto mx-1'
+                                                variant='flat'
+                                                isDisabled={isLastUser}
+                                                onPress={() => {
+                                                    updateConfig({
+                                                        promptList: openaiConfig.promptList.filter(
+                                                            (_, i) => i !== index
+                                                        ),
+                                                    });
+                                                }}
+                                            >
+                                                <MdDeleteOutline className='text-[18px]' />
+                                            </Button>
+                                        </div>
+                                    );
+                                })}
+                            {promptError !== '' && <p className='text-[12px] text-red-500'>{promptError}</p>}
+                            <Button
+                                fullWidth
+                                onPress={() => {
+                                    updateConfig({
+                                        promptList: [
+                                            ...openaiConfig.promptList,
+                                            {
+                                                role:
+                                                    openaiConfig.promptList.length === 0
+                                                        ? 'system'
+                                                        : openaiConfig.promptList.length % 2 === 0
+                                                          ? 'assistant'
+                                                          : 'user',
+                                                content: '',
+                                            },
+                                        ],
+                                    });
+                                }}
+                            >
+                                {t('services.translate.openai.add')}
+                            </Button>
+                        </div>
+                        <br />
+
+                        <h3 className='my-auto'>Request Arguments</h3>
+                        <div className='config-item'>
+                            <Textarea
+                                label=''
+                                labelPlacement='outside'
+                                variant='faded'
+                                isInvalid={requestArgumentsError !== ''}
+                                errorMessage={requestArgumentsError}
+                                value={openaiConfig['requestArguments']}
+                                placeholder={`Input API Request Arguments`}
+                                onValueChange={(value) => {
+                                    updateConfig({ requestArguments: value });
+                                }}
+                            />
+                        </div>
+                        <br />
+                    </>
+                )}
                 <Button
                     type='submit'
-                    isLoading={isLoading}
+                    isDisabled={!canSave}
                     fullWidth
                     color='primary'
                 >

@@ -1,22 +1,21 @@
 import { fetch, Body } from '@tauri-apps/api/http';
 import { Language } from './info';
-import { defaultRequestArguments } from './Config';
+import { defaultRequestArguments, normalizeChatUrl } from './utils';
 
 export async function translate(text, from, to, options) {
     const { config, setResult, detect } = options;
 
     let { service, requestPath, model, apiKey, stream, promptList, requestArguments } = config;
 
-    if (!/https?:\/\/.+/.test(requestPath)) {
-        requestPath = `https://${requestPath}`;
-    }
-    const apiUrl = new URL(requestPath);
-
-    // in openai like api, /v1 is not required
-    if (service === 'openai' && !apiUrl.pathname.endsWith('/chat/completions')) {
-        // not openai like, populate completion endpoint
-        apiUrl.pathname += apiUrl.pathname.endsWith('/') ? '' : '/';
-        apiUrl.pathname += 'v1/chat/completions';
+    let apiUrl;
+    if (service === 'openai') {
+        apiUrl = new URL(normalizeChatUrl(requestPath));
+    } else {
+        // Azure keeps its own request path, do not apply the OpenAI rules.
+        if (!/https?:\/\/.+/.test(requestPath)) {
+            requestPath = `https://${requestPath}`;
+        }
+        apiUrl = new URL(requestPath);
     }
 
     // 兼容旧版

@@ -88,7 +88,9 @@ export default function TargetArea(props) {
     const lastManualTranslateRef = useRef(manualTranslate);
     const snapshotRef = useRef(restoredSnapshot);
     const manualExpandRef = useRef(false);
+    const collapsedRef = useRef(collapsed);
     snapshotRef.current = restoredSnapshot;
+    collapsedRef.current = collapsed;
     const sourceLanguage = useAtomValue(sourceLanguageAtom);
     const targetLanguage = useAtomValue(targetLanguageAtom);
     const [autoCopy] = useConfig('translate_auto_copy', 'disable');
@@ -285,7 +287,7 @@ export default function TargetArea(props) {
                 const instanceConfig = serviceInstanceConfigMap[currentTranslateServiceInstanceKey];
                 instanceConfig['enable'] = 'true';
                 const setHideOnce = invokeOnce((value) => {
-                    if (!collapsed) {
+                    if (!collapsedRef.current) {
                         setHide(value);
                     }
                 });
@@ -367,7 +369,7 @@ export default function TargetArea(props) {
                 }
                 const instanceConfig = serviceInstanceConfigMap[currentTranslateServiceInstanceKey];
                 const setHideOnce = invokeOnce((value) => {
-                    if (!collapsed) {
+                    if (!collapsedRef.current) {
                         setHide(value);
                     }
                 });

@@ -1,7 +1,7 @@
 import { appWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
+import { sendNotification } from '@tauri-apps/api/notification';
 import { invoke } from '@tauri-apps/api';
-import toast, { Toaster } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { info, error as logError } from 'tauri-plugin-log-api';
 import { MdAdd, MdClose, MdLock, MdRefresh, MdRemove, MdSwapHoriz } from 'react-icons/md';
@@ -10,13 +10,27 @@ import React, { useEffect, useRef, useState } from 'react';
 import { translateWithService } from '../../utils/translate_text';
 import { mergeLineBoxes, normalizeBlocks } from '../../utils/overlay_layout';
 import { recognizeWithBoxes } from '../../services/recognize/system';
-import { useConfig, useToastStyle } from '../../hooks';
+import { useConfig } from '../../hooks';
 
 const TOOLBAR_HEIGHT = 32;
 
+async function notifyError(title, body, block = false) {
+    const text = String(body ?? '').slice(0, 400);
+    logError(`[overlay] ${title}: ${text}`);
+    try {
+        if (block) {
+            await invoke('show_overlay_error', { title, body: text });
+        } else {
+            await sendNotification({ title, body: text });
+        }
+    } catch {
+        sendNotification({ title, body: text }).catch(() => {});
+    }
+}
+
+
 export default function Overlay() {
     const { t } = useTranslation();
-    const toastStyle = useToastStyle();
     const [overlayOpacity] = useConfig('overlay_opacity', 0.85);
     const [overlayFontScale] = useConfig('overlay_font_scale', 1);
     const [overlayConcurrency] = useConfig('overlay_max_concurrency', 3);
@@ -38,12 +52,10 @@ export default function Overlay() {
     const runRef = useRef(null);
     const refreshRef = useRef(null);
     const tRef = useRef(t);
-    const toastStyleRef = useRef(toastStyle);
     const concurrencyRef = useRef(overlayConcurrency);
     const fontScaleRef = useRef(fontScale);
 
     tRef.current = t;
-    toastStyleRef.current = toastStyle;
     concurrencyRef.current = overlayConcurrency;
     fontScaleRef.current = fontScale;
 
@@ -74,14 +86,11 @@ export default function Overlay() {
 
     const runOverlay = async (overlayState) => {
         const tr = tRef.current;
-        const style = toastStyleRef.current;
 
         const showErrorAndClose = async (message) => {
             await appWindow.show();
-            toast.error(message, { style, duration: 2200 });
-            setTimeout(() => {
-                appWindow.close();
-            }, 2400);
+            await notifyError(tr('overlay.title'), message, true);
+            await appWindow.close();
         };
 
         let boxes;
@@ -122,7 +131,7 @@ export default function Overlay() {
         await appWindow.show();
 
         if (!overlayState.service) {
-            toast.error(tr('overlay.no_service'), { style, duration: 6000 });
+            await notifyError(tr('overlay.title'), tr('overlay.no_service'), true);
             return;
         }
 
@@ -176,12 +185,16 @@ export default function Overlay() {
 
         if (!disposedRef.current) {
             if (failed === normalized.length) {
-                toast.error(
+                await notifyError(
+                    tr('overlay.title'),
                     `${tr('overlay.all_failed')} (${overlayState.service})${lastError ? `\n${lastError}` : ''}`,
-                    { style, duration: 8000 }
+                    true
                 );
             } else if (failed > 0) {
-                toast.error(`${tr('overlay.partial_failed')} (${overlayState.service})`, { style });
+                notifyError(
+                    tr('overlay.title'),
+                    `${tr('overlay.partial_failed')} (${overlayState.service})`
+                );
             }
         }
     };
@@ -215,9 +228,10 @@ export default function Overlay() {
             setState(refreshedState);
             await runRef.current(refreshedState);
         } catch (e) {
-            toast.error((tRef.current('overlay.refresh_failed') ?? '') + (e?.toString() ?? String(e)), {
-                style: toastStyleRef.current,
-            });
+            notifyError(
+                tRef.current('overlay.title'),
+                (tRef.current('overlay.refresh_failed') ?? '') + (e?.toString() ?? String(e))
+            );
             await appWindow.show();
         } finally {
             refreshingRef.current = false;
@@ -241,13 +255,8 @@ export default function Overlay() {
             } catch (e) {
                 if (!disposedRef.current) {
                     await appWindow.show();
-                    toast.error(e?.toString() ?? String(e), {
-                        style: toastStyleRef.current,
-                        duration: 2200,
-                    });
-                    setTimeout(() => {
-                        appWindow.close();
-                    }, 2400);
+                    await notifyError(tRef.current('overlay.title'), e?.toString() ?? String(e), true);
+                    await appWindow.close();
                 }
             }
         };
@@ -351,7 +360,6 @@ export default function Overlay() {
                 pointerEvents: locked ? 'none' : 'auto',
             }}
         >
-            <Toaster />
             {!locked && (
                 <div
                     style={{

@@ -496,6 +496,7 @@
             }
         },
         "overlay": {
+            "title": "覆盖翻译",
             "refresh": "刷新",
             "lock": "锁定",
             "close": "关闭",

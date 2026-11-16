@@ -15,6 +15,11 @@ pub struct CropInfo {
     pub padding_top: u32,
 }
 
+#[tauri::command(async)]
+pub fn show_overlay_error(window: tauri::Window, title: String, body: String) {
+    tauri::api::dialog::message(Some(&window), title, body);
+}
+
 #[tauri::command]
 pub fn get_text(state: tauri::State<StringWrapper>) -> String {
     return state.0.lock().unwrap().to_string();

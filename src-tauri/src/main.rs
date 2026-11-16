@@ -137,6 +137,7 @@ fn main() {
             system_ocr,
             system_ocr_boxes,
             get_overlay_state,
+            show_overlay_error,
             set_proxy,
             unset_proxy,
             run_binary,

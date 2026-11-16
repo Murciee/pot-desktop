@@ -496,6 +496,7 @@
             }
         },
         "overlay": {
+            "title": "Overlay Translation",
             "refresh": "Refresh",
             "lock": "Lock",
             "close": "Close",

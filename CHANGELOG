@@ -1,3 +1,17 @@
+## 3.0.8 (2026-11-17)
+
+### New features:
+
+-   Add Windows overlay translation with OCR-backed text replacement.
+-   Add OpenAI-compatible endpoint presets and model selection for overlay translation.
+
+### Bugs fixed:
+
+-   Improve screenshot translation capture and window activation.
+-   Prevent long overlay translations and adjacent text boxes from being clipped.
+-   Improve configuration window resizing, shortcut field sizing, and control borders.
+-   Because this release starts a new updater signing key, existing installations must install 3.0.8 manually once before automatic updates resume.
+
 ## 3.0.7 (2025-5-10)
 
 ### New feature:

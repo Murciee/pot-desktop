@@ -8,6 +8,10 @@ on:
 permissions:
     contents: write
 
+concurrency:
+    group: windows-release
+    cancel-in-progress: false
+
 jobs:
     build-windows:
         runs-on: windows-latest
@@ -54,7 +58,7 @@ jobs:
               env:
                   RELEASE_VERSION: ${{ github.ref_name }}
               run: |
-                  node -e 'const fs=require("node:fs"); const v=process.env.RELEASE_VERSION; const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.version=v; fs.writeFileSync("package.json",JSON.stringify(p,null,4)+"\n"); const t=JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8")); t.package.version=v; fs.writeFileSync("src-tauri/tauri.conf.json",JSON.stringify(t,null,4)+"\n"); const c=fs.readFileSync("src-tauri/Cargo.toml","utf8").replace(/^version = "0\.0\.0"$/m,`version = "${v}"`); fs.writeFileSync("src-tauri/Cargo.toml",c);'
+                  node -e 'const fs=require("node:fs"); const v=process.env.RELEASE_VERSION; const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.version=v; fs.writeFileSync("package.json",JSON.stringify(p,null,4)+"\n"); const t=JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8")); t.package.version=v; fs.writeFileSync("src-tauri/tauri.conf.json",JSON.stringify(t,null,4)+"\n"); const c=fs.readFileSync("src-tauri/Cargo.toml","utf8").replace(/^version = "[^"]+"$/m,`version = "${v}"`); fs.writeFileSync("src-tauri/Cargo.toml",c);'
 
             - name: Install dependencies
               run: pnpm install --frozen-lockfile

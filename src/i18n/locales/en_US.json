@@ -521,6 +521,7 @@
             "no_service": "No translation service configured. Please add one in Preferences.",
             "partial_failed": "Some blocks failed to translate, showing the original text",
             "all_failed": "Translation failed. Please check the service configuration.",
+            "rate_limited": "Translation service is rate-limited (HTTP 429). Try another service or wait and retry.",
             "refresh_failed": "Refresh failed: "
         },
         "translate": {

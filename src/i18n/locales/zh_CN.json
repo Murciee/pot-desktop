@@ -521,6 +521,7 @@
             "no_service": "未配置翻译服务，请前往设置添加",
             "partial_failed": "部分段落翻译失败，已显示原文",
             "all_failed": "翻译失败，请检查服务配置",
+            "rate_limited": "翻译服务被限流（HTTP 429），请更换服务或稍后重试",
             "refresh_failed": "刷新失败："
         },
         "translate": {

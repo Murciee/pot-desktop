@@ -14,8 +14,17 @@ import { useConfig } from '../../hooks';
 
 const TOOLBAR_HEIGHT = 32;
 
+function cleanErrorMessage(value) {
+    let text = String(value ?? '');
+    if (/<html|<title/i.test(text)) {
+        const title = text.match(/<title[^>]*>(.*?)<\/title>/i)?.[1];
+        text = title || text.replace(/<[^>]+>/g, ' ');
+    }
+    return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+}
+
 async function notifyError(title, body, block = false) {
-    const text = String(body ?? '').slice(0, 400);
+    const text = cleanErrorMessage(body);
     logError(`[overlay] ${title}: ${text}`);
     try {
         if (block) {
@@ -170,8 +179,11 @@ export default function Overlay() {
                     );
                 } catch (e) {
                     failed += 1;
-                    lastError = e?.toString?.() ?? String(e);
-                    logError(`[overlay] translate failed: ${lastError}`);
+                    const rawError = e?.toString?.() ?? String(e);
+                    lastError = /\b429\b/.test(rawError)
+                        ? tr('overlay.rate_limited')
+                        : cleanErrorMessage(rawError);
+                    logError(`[overlay] translate failed: ${rawError}`);
                     if (disposedRef.current) {
                         return;
                     }

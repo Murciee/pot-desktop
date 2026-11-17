@@ -17,7 +17,9 @@ pub struct CropInfo {
 
 #[tauri::command(async)]
 pub fn show_overlay_error(window: tauri::Window, title: String, body: String) {
+    crate::window::OVERLAY_DIALOG_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
     tauri::api::dialog::message(Some(&window), title, body);
+    crate::window::OVERLAY_DIALOG_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 #[tauri::command]

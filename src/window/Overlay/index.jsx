@@ -1,4 +1,4 @@
-import { appWindow } from '@tauri-apps/api/window';
+import { appWindow, LogicalSize } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { sendNotification } from '@tauri-apps/api/notification';
 import { invoke } from '@tauri-apps/api';
@@ -56,6 +56,7 @@ export default function Overlay() {
     const [refreshing, setRefreshing] = useState(false);
 
     const blockRefs = useRef(new Map());
+    const grownRef = useRef(false);
     const disposedRef = useRef(false);
     const refreshingRef = useRef(false);
     const runRef = useRef(null);
@@ -136,6 +137,7 @@ export default function Overlay() {
         if (disposedRef.current) {
             return;
         }
+        grownRef.current = false;
         setBlocks(normalized);
         await appWindow.show();
 
@@ -316,28 +318,42 @@ export default function Overlay() {
                     return;
                 }
                 const blockHeight = block.nh * viewport.height;
-                let low = 9;
-                let high = Math.max(9, Math.min(blockHeight * 0.72, baseSize));
-                let best = 9;
-                while (high - low > 0.25) {
-                    const middle = (low + high) / 2;
-                    element.style.fontSize = `${middle}px`;
-                    if (
-                        element.scrollWidth <= element.clientWidth + 0.5 &&
-                        element.scrollHeight <= element.clientHeight + 0.5
-                    ) {
-                        best = middle;
-                        low = middle;
-                    } else {
-                        high = middle;
-                    }
-                }
-                element.style.fontSize = `${best}px`;
-                element.style.overflow = 'hidden';
+                const blockWidth = block.nw * viewport.width;
+                const vertical = blockHeight > blockWidth * 1.5;
+                const fontSize = Math.max(
+                    9,
+                    Math.min((vertical ? blockWidth : blockHeight) * 0.72, baseSize)
+                );
+                element.style.fontSize = `${fontSize}px`;
+                element.style.overflow = 'visible';
             });
         });
         return () => cancelAnimationFrame(frame);
     }, [blocks, viewport, fontScale, showOriginal, appFontSize, state]);
+
+    // If the translation is longer than the original line, grow the overlay
+    // window to the right/bottom instead of clipping the text.
+    useEffect(() => {
+        if (grownRef.current || blocks.length === 0) {
+            return;
+        }
+        const frame = requestAnimationFrame(() => {
+            let maxRight = 0;
+            let maxBottom = 0;
+            blockRefs.current.forEach((element) => {
+                const rect = element.getBoundingClientRect();
+                maxRight = Math.max(maxRight, rect.right);
+                maxBottom = Math.max(maxBottom, rect.bottom);
+            });
+            if (maxRight > window.innerWidth + 2 || maxBottom > window.innerHeight + 2) {
+                grownRef.current = true;
+                appWindow
+                    .setSize(new LogicalSize(Math.ceil(maxRight + 8), Math.ceil(maxBottom + 8)))
+                    .catch(() => {});
+            }
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [blocks, viewport, fontScale, showOriginal]);
 
     const opacity = Math.min(1, Math.max(0.3, Number(overlayOpacity) || 0.85));
     const fontFamily = `"${appFont === 'default' || !appFont ? 'sans-serif' : appFont}","${
@@ -456,9 +472,13 @@ export default function Overlay() {
             )}
             {blocks.map((block) => {
                 const text = showOriginal ? block.text : block.translated || block.text;
+                const blockWidth = block.nw * viewport.width;
+                const blockHeight = block.nh * viewport.height;
+                const vertical = blockHeight > blockWidth * 1.5;
                 return (
                     <div
                         key={block.id}
+                        dir='auto'
                         ref={(element) => {
                             if (element) {
                                 blockRefs.current.set(block.id, element);
@@ -471,7 +491,7 @@ export default function Overlay() {
                             left: `${block.nx * 100}%`,
                             top: `${block.ny * 100}%`,
                             width: `${block.nw * 100}%`,
-                            height: `${block.nh * 100}%`,
+                            minHeight: `${block.nh * 100}%`,
                             boxSizing: 'border-box',
                             padding: '2px 4px',
                             background: `rgba(255,255,255,${opacity})`,
@@ -481,9 +501,11 @@ export default function Overlay() {
                             borderRadius: 4,
                             color: '#111',
                             lineHeight: 1.15,
-                            overflow: 'hidden',
+                            overflow: 'visible',
                             whiteSpace: 'pre-wrap',
                             wordBreak: 'break-word',
+                            writingMode: vertical ? 'vertical-rl' : 'horizontal-tb',
+                            textAlign: 'start',
                             fontSize: 16,
                             userSelect: locked ? 'none' : 'text',
                         }}

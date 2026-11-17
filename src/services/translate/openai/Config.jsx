@@ -326,64 +326,69 @@ export function Config(props) {
                 </div>
                 <div className={`config-item ${openaiConfig.service === 'azure' && 'hidden'}`}>
                     <h3 className='my-auto'>{t('services.translate.openai.model')}</h3>
-                    <div className='flex items-center gap-2 w-[50%]'>
+                    <div className='w-[50%]'>
                         <Input
                             aria-label={t('services.translate.openai.model')}
                             value={openaiConfig['model']}
                             variant='bordered'
                             placeholder='gpt-4o-mini'
                             classNames={{
-                                base: 'flex-1',
+                                base: 'w-full',
                                 mainWrapper: 'w-full',
                             }}
                             onValueChange={(value) => {
                                 updateConfig({ model: value });
                             }}
                         />
-                        <Dropdown>
-                            <DropdownTrigger>
-                                <Button
-                                    variant='bordered'
-                                    isDisabled={(openaiConfig.modelList ?? []).length === 0}
+                        <div className='flex gap-2 mt-2'>
+                            <Dropdown className='flex-1'>
+                                <DropdownTrigger>
+                                    <Button
+                                        variant='bordered'
+                                        className='w-full'
+                                        isDisabled={(openaiConfig.modelList ?? []).length === 0}
+                                        title={openaiConfig.model}
+                                    >
+                                        {t('services.translate.openai.model_select')}
+                                    </Button>
+                                </DropdownTrigger>
+                                <DropdownMenu
+                                    aria-label='model list'
+                                    className='max-h-[40vh] overflow-y-auto'
+                                    onAction={(key) => {
+                                        const model = String(key);
+                                        if (!NON_CHAT_MODEL.test(model)) {
+                                            updateConfig({ model });
+                                        }
+                                    }}
                                 >
-                                    {t('services.translate.openai.model_select')}
-                                </Button>
-                            </DropdownTrigger>
-                            <DropdownMenu
-                                aria-label='model list'
-                                className='max-h-[40vh] overflow-y-auto'
-                                onAction={(key) => {
-                                    const model = String(key);
-                                    if (!NON_CHAT_MODEL.test(model)) {
-                                        updateConfig({ model });
-                                    }
-                                }}
+                                    {(openaiConfig.modelList ?? []).map((model) => {
+                                        const nonChat = NON_CHAT_MODEL.test(model);
+                                        return (
+                                            <DropdownItem
+                                                key={model}
+                                                isDisabled={nonChat}
+                                            >
+                                                <span className='break-all'>{model}</span>
+                                                {nonChat && (
+                                                    <span className='ml-2 text-default-400'>
+                                                        {t('services.translate.openai.non_chat_model')}
+                                                    </span>
+                                                )}
+                                            </DropdownItem>
+                                        );
+                                    })}
+                                </DropdownMenu>
+                            </Dropdown>
+                            <Button
+                                className='flex-1'
+                                variant='bordered'
+                                isLoading={fetchingModels}
+                                onPress={handleFetchModels}
                             >
-                                {(openaiConfig.modelList ?? []).map((model) => {
-                                    const nonChat = NON_CHAT_MODEL.test(model);
-                                    return (
-                                        <DropdownItem
-                                            key={model}
-                                            isDisabled={nonChat}
-                                        >
-                                            <span className='break-all'>{model}</span>
-                                            {nonChat && (
-                                                <span className='ml-2 text-default-400'>
-                                                    {t('services.translate.openai.non_chat_model')}
-                                                </span>
-                                            )}
-                                        </DropdownItem>
-                                    );
-                                })}
-                            </DropdownMenu>
-                        </Dropdown>
-                        <Button
-                            variant='bordered'
-                            isLoading={fetchingModels}
-                            onPress={handleFetchModels}
-                        >
-                            {t('services.translate.openai.fetch_models')}
-                        </Button>
+                                {t('services.translate.openai.fetch_models')}
+                            </Button>
+                        </div>
                     </div>
                 </div>
                 <div className='config-item'>

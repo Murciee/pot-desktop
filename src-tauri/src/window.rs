@@ -468,6 +468,80 @@ struct OverlayRectPayload {
 
 static OVERLAY_STATE: once_cell::sync::Lazy<std::sync::Mutex<Option<OverlayState>>> =
     once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
+#[cfg(target_os = "windows")]
+static OVERLAY_TARGET_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+pub static OVERLAY_DIALOG_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+fn foreground_window() -> isize {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    unsafe { GetForegroundWindow().0 as isize }
+}
+
+#[cfg(target_os = "windows")]
+fn root_window_at(x: i32, y: i32) -> isize {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, WindowFromPoint, GA_ROOT};
+    unsafe {
+        let hwnd = WindowFromPoint(POINT { x, y });
+        if hwnd.0.is_null() {
+            return 0;
+        }
+        GetAncestor(hwnd, GA_ROOT).0 as isize
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn root_window_of(hwnd: isize) -> isize {
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
+    if hwnd == 0 {
+        return 0;
+    }
+    unsafe {
+        GetAncestor(
+            windows::Win32::Foundation::HWND(hwnd as *mut core::ffi::c_void),
+            GA_ROOT,
+        )
+        .0 as isize
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_overlay_focus_watcher(window: &Window) {
+    let app_handle = APP.get().unwrap().clone();
+    let overlay_hwnd = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    let target = OVERLAY_TARGET_HWND.load(std::sync::atomic::Ordering::SeqCst);
+    if target == 0 {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(800));
+        loop {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        if app_handle.get_window("overlay").is_none() {
+            break;
+        }
+        if OVERLAY_DIALOG_OPEN.load(std::sync::atomic::Ordering::SeqCst) {
+            continue;
+        }
+        let foreground = foreground_window();
+        let foreground_root = root_window_of(foreground);
+        if foreground_root != 0
+            && foreground_root != target
+            && foreground != overlay_hwnd
+            && foreground_root != overlay_hwnd
+        {
+            if let Some(window) = app_handle.get_window("overlay") {
+                let _ = window.close();
+            }
+            break;
+        }
+        }
+    });
+}
 static OVERLAY_LISTENER_ID: once_cell::sync::Lazy<
     std::sync::Mutex<Option<tauri::EventHandler>>,
 > = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
@@ -490,6 +564,20 @@ pub fn overlay_translate() {
     let window_for_listener = window.clone();
     let id = window.listen("overlay_rect", move |event| {
         if let Ok(rect) = serde_json::from_str::<OverlayRectPayload>(event.payload().unwrap_or_default()) {
+            // The screenshot window hides itself before emitting. The window
+            // under the selection center is therefore the page being covered.
+            let screenshot_hwnd = window_for_listener
+                .hwnd()
+                .map(|h| h.0 as isize)
+                .unwrap_or(0);
+            let mut target = root_window_at(
+                rect.screen_x + rect.width as i32 / 2,
+                rect.screen_y + rect.height as i32 / 2,
+            );
+            if target == screenshot_hwnd {
+                target = root_window_of(foreground_window());
+            }
+            OVERLAY_TARGET_HWND.store(target, std::sync::atomic::Ordering::SeqCst);
             let monitor = window_for_listener.current_monitor().ok().flatten();
             let monitor_position = monitor
                 .as_ref()
@@ -612,6 +700,8 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
         window.outer_position().ok(),
         window.outer_size().ok()
     );
+
+    spawn_overlay_focus_watcher(&window);
 
     Ok(window)
 }

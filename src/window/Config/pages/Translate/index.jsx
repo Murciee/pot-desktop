@@ -472,7 +472,7 @@ export default function Translate() {
                             <div className='config-item'>
                                 <h3 className='my-auto mx-0'>{t('config.translate.overlay_model')}</h3>
                                 {overlayModel !== null && (
-                                    <div className='flex flex-wrap items-center gap-2 w-[70%]'>
+                                    <div className='w-[50%]'>
                                         <Input
                                             value={overlayModel}
                                             variant='bordered'
@@ -480,47 +480,61 @@ export default function Translate() {
                                                 overlayServiceConfig?.model ||
                                                 t('config.translate.overlay_model_follow')
                                             }
+                                            classNames={{
+                                                base: 'w-full',
+                                                mainWrapper: 'w-full',
+                                            }}
                                             onValueChange={(value) => setOverlayModel(value)}
                                         />
-                                        <Dropdown>
-                                            <DropdownTrigger>
-                                                <Button
-                                                    variant='bordered'
-                                                    isDisabled={overlayModelList.length === 0}
-                                                >
-                                                    {t('config.translate.overlay_model_select')}
-                                                </Button>
-                                            </DropdownTrigger>
-                                            <DropdownMenu
-                                                aria-label='overlay model'
-                                                className='max-h-[40vh] overflow-y-auto'
-                                                onAction={(key) => setOverlayModel(key === 'follow' ? '' : key)}
-                                            >
-                                                <DropdownItem key='follow'>
-                                                    {t('config.translate.overlay_model_follow')}
-                                                </DropdownItem>
-                                                {overlayModelList.map((model) => (
-                                                    <DropdownItem
-                                                        key={model}
-                                                        isDisabled={NON_CHAT_MODEL.test(model)}
+                                        <p className='mt-1 text-[11px] text-default-500'>
+                                            {t('config.translate.overlay_model_current')}:{' '}
+                                            {overlayModel ||
+                                                overlayServiceConfig?.model ||
+                                                t('config.translate.overlay_model_follow')}
+                                        </p>
+                                        <div className='flex gap-2 mt-2'>
+                                            <Dropdown className='flex-1'>
+                                                <DropdownTrigger>
+                                                    <Button
+                                                        variant='bordered'
+                                                        className='w-full'
+                                                        isDisabled={overlayModelList.length === 0}
                                                     >
-                                                        {model}
-                                                        {NON_CHAT_MODEL.test(model) && (
-                                                            <span className='ml-2 text-default-400'>
-                                                                {t('services.translate.openai.non_chat_model')}
-                                                            </span>
-                                                        )}
+                                                        {t('config.translate.overlay_model_select')}
+                                                    </Button>
+                                                </DropdownTrigger>
+                                                <DropdownMenu
+                                                    aria-label='overlay model'
+                                                    className='max-h-[40vh] overflow-y-auto'
+                                                    onAction={(key) => setOverlayModel(key === 'follow' ? '' : key)}
+                                                >
+                                                    <DropdownItem key='follow'>
+                                                        {t('config.translate.overlay_model_follow')}
                                                     </DropdownItem>
-                                                ))}
-                                            </DropdownMenu>
-                                        </Dropdown>
-                                        <Button
-                                            variant='bordered'
-                                            isLoading={fetchingOverlayModels}
-                                            onPress={fetchOverlayModels}
-                                        >
-                                            {t('config.translate.overlay_model_fetch')}
-                                        </Button>
+                                                    {overlayModelList.map((model) => (
+                                                        <DropdownItem
+                                                            key={model}
+                                                            isDisabled={NON_CHAT_MODEL.test(model)}
+                                                        >
+                                                            {model}
+                                                            {NON_CHAT_MODEL.test(model) && (
+                                                                <span className='ml-2 text-default-400'>
+                                                                    {t('services.translate.openai.non_chat_model')}
+                                                                </span>
+                                                            )}
+                                                        </DropdownItem>
+                                                    ))}
+                                                </DropdownMenu>
+                                            </Dropdown>
+                                            <Button
+                                                className='flex-1'
+                                                variant='bordered'
+                                                isLoading={fetchingOverlayModels}
+                                                onPress={fetchOverlayModels}
+                                            >
+                                                {t('config.translate.overlay_model_fetch')}
+                                            </Button>
+                                        </div>
                                     </div>
                                 )}
                                 <p className='text-[11px] text-default-500'>

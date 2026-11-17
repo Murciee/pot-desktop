@@ -1,0 +1,123 @@
+name: Windows Release
+
+on:
+    push:
+        tags:
+            - '[0-9]*'
+
+permissions:
+    contents: write
+
+jobs:
+    build-windows:
+        runs-on: windows-latest
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - arch: x64
+                      target: x86_64-pc-windows-msvc
+                      toolchain: stable-x86_64-pc-windows-msvc
+                    - arch: x86
+                      target: i686-pc-windows-msvc
+                      toolchain: stable-i686-pc-windows-msvc
+                    - arch: arm64
+                      target: aarch64-pc-windows-msvc
+                      toolchain: stable-aarch64-pc-windows-msvc
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 21
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 9
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Install Rust target
+              shell: pwsh
+              run: |
+                  rustup target add ${{ matrix.target }}
+                  rustup toolchain install --force-non-host ${{ matrix.toolchain }}
+
+            - name: Set build version from tag
+              shell: pwsh
+              env:
+                  RELEASE_VERSION: ${{ github.ref_name }}
+              run: |
+                  node -e 'const fs=require("node:fs"); const v=process.env.RELEASE_VERSION; const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.version=v; fs.writeFileSync("package.json",JSON.stringify(p,null,4)+"\n"); const t=JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8")); t.package.version=v; fs.writeFileSync("src-tauri/tauri.conf.json",JSON.stringify(t,null,4)+"\n"); const c=fs.readFileSync("src-tauri/Cargo.toml","utf8").replace(/^version = "0\.0\.0"$/m,`version = "${v}"`); fs.writeFileSync("src-tauri/Cargo.toml",c);'
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Build Windows installer and updater bundle
+              run: pnpm tauri build -b nsis,updater --target ${{ matrix.target }}
+              env:
+                  TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+                  TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+            - name: Upload Windows artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                  name: windows-${{ matrix.arch }}
+                  path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*setup*
+                  if-no-files-found: error
+
+    publish-release:
+        needs: build-windows
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout release source
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.ref }}
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 21
+
+            - name: Setup pnpm
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 9
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Download Windows artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  pattern: windows-*
+                  path: artifacts
+                  merge-multiple: true
+
+            - name: Publish version release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.ref_name }}
+                  body_path: CHANGELOG
+                  files: artifacts/*
+                  fail_on_unmatched_files: true
+
+            - name: Generate updater manifest
+              run: pnpm run updater
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+
+            - name: Publish updater manifest
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: updater
+                  body: Windows updater manifest for ${{ github.ref_name }}
+                  files: update.json
+                  fail_on_unmatched_files: true

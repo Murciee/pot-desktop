@@ -583,7 +583,7 @@ export default function Translate() {
                                     max={1}
                                     step={0.05}
                                     value={String(overlayOpacity)}
-                                    className='max-w-[120px]'
+                                    className='w-full max-w-[120px]'
                                     onValueChange={(v) => {
                                         const value = parseFloat(v);
                                         if (Number.isNaN(value)) {
@@ -605,7 +605,7 @@ export default function Translate() {
                                     max={2}
                                     step={0.1}
                                     value={String(overlayFontScale)}
-                                    className='max-w-[120px]'
+                                    className='w-full max-w-[120px]'
                                     onValueChange={(v) => {
                                         const value = parseFloat(v);
                                         if (Number.isNaN(value)) {
@@ -627,7 +627,7 @@ export default function Translate() {
                                     max={10}
                                     step={1}
                                     value={String(overlayConcurrency)}
-                                    className='max-w-[120px]'
+                                    className='w-full max-w-[120px]'
                                     onValueChange={(v) => {
                                         const value = parseInt(v);
                                         if (Number.isNaN(value)) {
@@ -641,15 +641,17 @@ export default function Translate() {
                         </div>
                         <div className='config-item'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_refresh_hotkey')}</h3>
-                            <div className='flex items-center gap-2 max-w-[50%]'>
+                            <div className='flex w-full min-w-0 max-w-[520px] flex-wrap items-center justify-end gap-2'>
                                 <Input
                                     isReadOnly
                                     variant='bordered'
+                                    className='w-full min-w-0 max-w-[420px] flex-1 basis-[180px]'
                                     value={overlayRefreshHotkey || ''}
                                     placeholder={t('config.translate.overlay_hotkey_hint')}
                                 />
                                 <Button
                                     variant='bordered'
+                                    className='shrink-0 whitespace-nowrap'
                                     onPress={() => navigate('/hotkey')}
                                 >
                                     {t('config.translate.overlay_go_hotkey')}

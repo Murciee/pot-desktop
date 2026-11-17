@@ -1,5 +1,38 @@
 .config-item {
     margin: 10px 0;
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     justify-content: space-between;
+    gap: 8px 16px;
+    min-width: 0;
+}
+
+.config-item > h3 {
+    flex: 1 1 220px;
+    min-width: 0;
+}
+
+.config-item > :not(h3) {
+    min-width: 0;
+}
+
+.config-item [data-slot='input-wrapper'] {
+    @apply rounded-xl border border-default-200 shadow-none;
+}
+
+.config-item [data-slot='input-wrapper'][data-hover='true'] {
+    @apply border-default-300;
+}
+
+.config-item [data-slot='input-wrapper']:focus-within {
+    @apply border-primary;
+}
+
+.config-item button[data-variant='bordered'] {
+    @apply rounded-xl border border-default-200 shadow-none;
+}
+
+.config-item button[data-variant='bordered'][data-hover='true'] {
+    @apply border-default-300;
 }

@@ -24,12 +24,16 @@ export default function Config() {
     }, []);
 
     return (
-        <>
+        <div
+            className={`flex h-screen w-screen min-w-0 overflow-hidden ${
+                osType === 'Windows_NT' ? 'rounded-[14px] border border-default-200' : ''
+            }`}
+        >
             <Card
                 shadow='none'
                 className={`${
                     transparent ? 'bg-background/90' : 'bg-content1'
-                } float-left w-[230px] h-screen rounded-none ${
+                } h-full w-[230px] shrink-0 rounded-none ${
                     osType === 'Linux' && 'rounded-l-[10px] border-1'
                 } border-r-1 border-default-100 select-none cursor-default`}
             >
@@ -52,7 +56,7 @@ export default function Config() {
                 <SideBar />
             </Card>
             <div
-                className={`bg-background ml-[230px] h-screen select-none cursor-default ${
+                className={`bg-background flex h-full min-w-0 flex-1 flex-col overflow-hidden select-none cursor-default ${
                     osType === 'Linux' && 'rounded-r-[10px] border-1 border-l-0 border-default-100'
                 }`}
             >
@@ -60,7 +64,7 @@ export default function Config() {
                     data-tauri-drag-region='true'
                     className='top-[5px] left-[235px] right-[5px] h-[30px] fixed'
                 />
-                <div className='h-[35px] flex justify-between'>
+                <div className='flex h-[35px] shrink-0 justify-between'>
                     <div className='flex'>
                         <h2 className='m-auto ml-[10px]'>{t(`config.${location.pathname.slice(1)}.title`)}</h2>
                     </div>
@@ -69,13 +73,11 @@ export default function Config() {
                 </div>
                 <Divider />
                 <div
-                    className={`p-[10px] overflow-y-auto ${
-                        osType === 'Linux' ? 'h-[calc(100vh-38px)]' : 'h-[calc(100vh-36px)]'
-                    }`}
+                    className='min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-[10px]'
                 >
                     {page}
                 </div>
             </div>
-        </>
+        </div>
     );
 }

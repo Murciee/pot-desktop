@@ -281,10 +281,11 @@ export default function Backup() {
                         </>
                     )}
                 </div>
-                <div className='flex justify-around'>
+                <div className='flex flex-wrap justify-center gap-3'>
                     <Button
                         color='success'
                         variant='flat'
+                        className='w-full min-w-[160px] max-w-[220px]'
                         isLoading={uploading}
                         onPress={onBackup}
                     >
@@ -293,6 +294,7 @@ export default function Backup() {
                     <Button
                         color='secondary'
                         variant='flat'
+                        className='w-full min-w-[160px] max-w-[220px]'
                         onPress={onBackupListOpen}
                     >
                         {t('config.backup.restore')}

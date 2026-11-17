@@ -43,15 +43,20 @@ pub static APP: OnceCell<tauri::AppHandle> = OnceCell::new();
 pub struct StringWrapper(pub Mutex<String>);
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, cwd| {
+    let builder = tauri::Builder::default();
+    #[cfg(not(all(target_os = "windows", debug_assertions)))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, cwd| {
             Notification::new(&app.config().tauri.bundle.identifier)
                 .title("The program is already running. Please do not start it again!")
                 .body(cwd)
                 .icon("pot")
                 .show()
                 .unwrap();
-        }))
+        }));
+    #[cfg(all(target_os = "windows", debug_assertions))]
+    let builder = builder;
+
+    builder
         .plugin(
             tauri_plugin_log::Builder::default()
                 .targets([LogTarget::LogDir, LogTarget::Stdout])

@@ -56,11 +56,11 @@ export default function SourceArea(props) {
 
     const handleNewText = async (text) => {
         text = text.trim();
-        if (hideWindow) {
-            appWindow.hide();
+        if (hideWindow && text !== '[IMAGE_TRANSLATE]') {
+            await appWindow.hide();
         } else {
-            appWindow.show();
-            appWindow.setFocus();
+            await appWindow.show();
+            await appWindow.setFocus();
         }
         // 清空检测语言
         setDetectLanguage('');

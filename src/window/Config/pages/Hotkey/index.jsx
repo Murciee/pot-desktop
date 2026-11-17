@@ -128,7 +128,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={selectionTranslate}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setSelectionTranslate);
                             }}
@@ -159,7 +159,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={inputTranslate}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setInputTranslate);
                             }}
@@ -190,7 +190,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={ocrRecognize}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setOcrRecognize);
                             }}
@@ -221,7 +221,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={ocrTranslate}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setOcrTranslate);
                             }}
@@ -252,7 +252,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={overlayTranslate}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setOverlayTranslate);
                             }}
@@ -283,7 +283,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={overlayRefresh}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setOverlayRefresh);
                             }}
@@ -314,7 +314,7 @@ export default function Hotkey() {
                             variant='bordered'
                             value={lastWindow}
                             label={t('config.hotkey.set_hotkey')}
-                            className='max-w-[50%]'
+                            className='w-full max-w-[320px]'
                             onKeyDown={(e) => {
                                 keyDown(e, setLastWindow);
                             }}

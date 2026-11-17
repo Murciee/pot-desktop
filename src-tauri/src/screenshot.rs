@@ -1,7 +1,7 @@
 use log::{error, info};
 
 #[tauri::command]
-pub fn screenshot(x: i32, y: i32) -> Result<(), String> {
+pub fn screenshot(x: i32, y: i32, window: tauri::Window) -> Result<(), String> {
     use crate::APP;
     use dirs::cache_dir;
     use screenshots::{Compression, Screen};
@@ -48,6 +48,16 @@ pub fn screenshot(x: i32, y: i32) -> Result<(), String> {
                 error!("Write screenshot failed: {}", e);
                 e.to_string()
             })?;
+            if window.label() == "screenshot" {
+                window.show().map_err(|e| {
+                    error!("Failed to show screenshot window: {}", e);
+                    e.to_string()
+                })?;
+                window.set_focus().map_err(|e| {
+                    error!("Failed to focus screenshot window: {}", e);
+                    e.to_string()
+                })?;
+            }
             return Ok(());
         }
     }

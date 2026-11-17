@@ -4,7 +4,7 @@ import { sendNotification } from '@tauri-apps/api/notification';
 import { invoke } from '@tauri-apps/api';
 import { useTranslation } from 'react-i18next';
 import { info, error as logError } from 'tauri-plugin-log-api';
-import { MdAdd, MdClose, MdLock, MdRefresh, MdRemove, MdSwapHoriz } from 'react-icons/md';
+import { MdAdd, MdClose, MdLock, MdRefresh, MdRemove } from 'react-icons/md';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { translateWithService } from '../../utils/translate_text';
@@ -50,13 +50,11 @@ export default function Overlay() {
     const [state, setState] = useState(null);
     const [blocks, setBlocks] = useState([]);
     const [locked, setLocked] = useState(true);
-    const [showOriginal, setShowOriginal] = useState(false);
     const [fontScale, setFontScale] = useState(1);
     const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [refreshing, setRefreshing] = useState(false);
 
     const blockRefs = useRef(new Map());
-    const grownRef = useRef(false);
     const disposedRef = useRef(false);
     const refreshingRef = useRef(false);
     const runRef = useRef(null);
@@ -137,7 +135,6 @@ export default function Overlay() {
         if (disposedRef.current) {
             return;
         }
-        grownRef.current = false;
         setBlocks(normalized);
         await appWindow.show();
 
@@ -295,30 +292,27 @@ export default function Overlay() {
         };
     }, []);
 
-    // Fit the font size of every block: start at min(block height * 0.72, base size),
-    // then binary search down to the largest size that still fits (minimum 9px).
+    // Keep OCR positions anchored to the original capture size, then move later
+    // translated blocks down only when their expanded text boxes would overlap.
     useEffect(() => {
+        let layoutFrame = null;
         const frame = requestAnimationFrame(() => {
             const overlayState = state;
-            if (!overlayState) {
+            if (!overlayState || blocks.length === 0) {
                 return;
             }
             const dpr = overlayState.dpr > 0 ? overlayState.dpr : 1;
             const originalWidth = overlayState.width / dpr;
             const originalHeight = overlayState.height / dpr;
-            const scale =
-                originalWidth > 0 && originalHeight > 0
-                    ? Math.min(viewport.width / originalWidth, viewport.height / originalHeight)
-                    : 1;
-            const baseSize = Math.max(1, (Number(appFontSize) || 16) * fontScale * Math.max(scale, 0.01));
+            const baseSize = Math.max(1, (Number(appFontSize) || 16) * fontScale);
 
             blocks.forEach((block) => {
                 const element = blockRefs.current.get(block.id);
                 if (!element) {
                     return;
                 }
-                const blockHeight = block.nh * viewport.height;
-                const blockWidth = block.nw * viewport.width;
+                const blockHeight = block.nh * originalHeight;
+                const blockWidth = block.nw * originalWidth;
                 const vertical = blockHeight > blockWidth * 1.5;
                 const fontSize = Math.max(
                     9,
@@ -327,33 +321,57 @@ export default function Overlay() {
                 element.style.fontSize = `${fontSize}px`;
                 element.style.overflow = 'visible';
             });
-        });
-        return () => cancelAnimationFrame(frame);
-    }, [blocks, viewport, fontScale, showOriginal, appFontSize, state]);
 
-    // If the translation is longer than the original line, grow the overlay
-    // window to the right/bottom instead of clipping the text.
-    useEffect(() => {
-        if (grownRef.current || blocks.length === 0) {
-            return;
-        }
-        const frame = requestAnimationFrame(() => {
-            let maxRight = 0;
-            let maxBottom = 0;
-            blockRefs.current.forEach((element) => {
-                const rect = element.getBoundingClientRect();
-                maxRight = Math.max(maxRight, rect.right);
-                maxBottom = Math.max(maxBottom, rect.bottom);
+            // Font-size changes affect wrapping, so measure and position after layout.
+            layoutFrame = requestAnimationFrame(() => {
+                const gap = 6;
+                const placed = [];
+                const orderedBlocks = blocks
+                    .map((block) => ({ block, element: blockRefs.current.get(block.id) }))
+                    .filter(({ element }) => element)
+                    .sort(
+                        (a, b) =>
+                            a.block.ny - b.block.ny || a.block.nx - b.block.nx
+                    );
+
+                orderedBlocks.forEach(({ block, element }) => {
+                    const rect = element.getBoundingClientRect();
+                    const left = block.nx * originalWidth;
+                    const right = left + rect.width;
+                    let top = block.ny * originalHeight;
+                    const overlappingBlocks = placed.filter(
+                        (item) => left < item.right && right > item.left
+                    );
+
+                    overlappingBlocks.forEach((item) => {
+                        top = Math.max(top, item.bottom + gap);
+                    });
+                    element.style.top = `${top}px`;
+                    placed.push({ left, right, top, bottom: top + rect.height });
+                });
+
+                let maxRight = 0;
+                let maxBottom = 0;
+                blockRefs.current.forEach((element) => {
+                    const rect = element.getBoundingClientRect();
+                    maxRight = Math.max(maxRight, rect.right);
+                    maxBottom = Math.max(maxBottom, rect.bottom);
+                });
+
+                const width = Math.max(viewport.width, Math.ceil(maxRight + 8));
+                const height = Math.max(viewport.height, Math.ceil(maxBottom + 8));
+                if (width > viewport.width + 1 || height > viewport.height + 1) {
+                    appWindow.setSize(new LogicalSize(width, height)).catch(() => {});
+                }
             });
-            if (maxRight > window.innerWidth + 2 || maxBottom > window.innerHeight + 2) {
-                grownRef.current = true;
-                appWindow
-                    .setSize(new LogicalSize(Math.ceil(maxRight + 8), Math.ceil(maxBottom + 8)))
-                    .catch(() => {});
-            }
         });
-        return () => cancelAnimationFrame(frame);
-    }, [blocks, viewport, fontScale, showOriginal]);
+        return () => {
+            cancelAnimationFrame(frame);
+            if (layoutFrame !== null) {
+                cancelAnimationFrame(layoutFrame);
+            }
+        };
+    }, [blocks, viewport, fontScale, appFontSize, state]);
 
     const opacity = Math.min(1, Math.max(0.3, Number(overlayOpacity) || 0.85));
     const fontFamily = `"${appFont === 'default' || !appFont ? 'sans-serif' : appFont}","${
@@ -426,15 +444,6 @@ export default function Overlay() {
                     <button
                         type='button'
                         style={toolStyle}
-                        title={showOriginal ? t('overlay.translation') : t('overlay.original')}
-                        aria-label={showOriginal ? t('overlay.translation') : t('overlay.original')}
-                        onClick={() => setShowOriginal((value) => !value)}
-                    >
-                        <MdSwapHoriz size={16} />
-                    </button>
-                    <button
-                        type='button'
-                        style={toolStyle}
                         title={t('overlay.font_smaller')}
                         aria-label={t('overlay.font_smaller')}
                         onClick={() => setFontScale((value) => Math.max(0.5, Number((value - 0.1).toFixed(2))))}
@@ -471,9 +480,15 @@ export default function Overlay() {
                 </div>
             )}
             {blocks.map((block) => {
-                const text = showOriginal ? block.text : block.translated || block.text;
-                const blockWidth = block.nw * viewport.width;
-                const blockHeight = block.nh * viewport.height;
+                if (!block.translated) {
+                    return null;
+                }
+                const text = block.translated;
+                const dpr = state?.dpr > 0 ? state.dpr : 1;
+                const originalWidth = state ? state.width / dpr : viewport.width;
+                const originalHeight = state ? state.height / dpr : viewport.height;
+                const blockWidth = block.nw * originalWidth;
+                const blockHeight = block.nh * originalHeight;
                 const vertical = blockHeight > blockWidth * 1.5;
                 return (
                     <div
@@ -488,10 +503,10 @@ export default function Overlay() {
                         }}
                         style={{
                             position: 'absolute',
-                            left: `${block.nx * 100}%`,
-                            top: `${block.ny * 100}%`,
-                            width: `${block.nw * 100}%`,
-                            minHeight: `${block.nh * 100}%`,
+                            left: `${block.nx * originalWidth}px`,
+                            top: `${block.ny * originalHeight}px`,
+                            width: `${blockWidth}px`,
+                            minHeight: `${blockHeight}px`,
                             boxSizing: 'border-box',
                             padding: '2px 4px',
                             background: `rgba(255,255,255,${opacity})`,
@@ -503,7 +518,8 @@ export default function Overlay() {
                             lineHeight: 1.15,
                             overflow: 'visible',
                             whiteSpace: 'pre-wrap',
-                            wordBreak: 'break-word',
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'normal',
                             writingMode: vertical ? 'vertical-rl' : 'horizontal-tb',
                             textAlign: 'start',
                             fontSize: 16,

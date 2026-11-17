@@ -230,12 +230,14 @@ pub fn selection_translate() {
     use selection::get_text;
     // Get Selected Text
     let text = get_text();
-    if !text.trim().is_empty() {
-        let app_handle = APP.get().unwrap();
-        // Write into State
-        let state: tauri::State<StringWrapper> = app_handle.state();
-        state.0.lock().unwrap().replace_range(.., &text);
+    if text.trim().is_empty() {
+        info!("No selected text, skip translate window");
+        return;
     }
+    let app_handle = APP.get().unwrap();
+    // Write into State
+    let state: tauri::State<StringWrapper> = app_handle.state();
+    state.0.lock().unwrap().replace_range(.., &text);
 
     let window = translate_window();
     window.emit("new_text", text).unwrap();
@@ -282,6 +284,10 @@ pub fn last_translate_window() {
 }
 
 pub fn text_translate(text: String) {
+    if text.trim().is_empty() {
+        info!("Empty text, skip translate window");
+        return;
+    }
     let app_handle = APP.get().unwrap();
     // Clear State
     let state: tauri::State<StringWrapper> = app_handle.state();

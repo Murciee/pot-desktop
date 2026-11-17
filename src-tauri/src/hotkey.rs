@@ -67,23 +67,26 @@ pub fn register_shortcut(shortcut: &str) -> Result<(), String> {
             register(app_handle, "hotkey_last_window", last_translate_window, "")?
         }
         "all" => {
-            register(
-                app_handle,
-                "hotkey_selection_translate",
-                selection_translate,
-                "",
-            )?;
-            register(app_handle, "hotkey_input_translate", input_translate, "")?;
-            register(app_handle, "hotkey_ocr_recognize", ocr_recognize, "")?;
-            register(app_handle, "hotkey_ocr_translate", ocr_translate, "")?;
-            register(app_handle, "hotkey_overlay_translate", overlay_hotkey, "")?;
-            register(
-                app_handle,
-                "hotkey_overlay_refresh",
-                overlay_refresh_hotkey,
-                "",
-            )?;
-            register(app_handle, "hotkey_last_window", last_translate_window, "")?;
+            // 逐个注册并收集失败项：单个热键被其他程序占用时，
+            // 不能让后面的热键全部注册不上。
+            let hotkeys: [(&str, fn()); 7] = [
+                ("hotkey_selection_translate", selection_translate),
+                ("hotkey_input_translate", input_translate),
+                ("hotkey_ocr_recognize", ocr_recognize),
+                ("hotkey_ocr_translate", ocr_translate),
+                ("hotkey_overlay_translate", overlay_hotkey),
+                ("hotkey_overlay_refresh", overlay_refresh_hotkey),
+                ("hotkey_last_window", last_translate_window),
+            ];
+            let mut failed: Vec<String> = Vec::new();
+            for (name, handler) in hotkeys {
+                if let Err(e) = register(app_handle, name, handler, "") {
+                    failed.push(format!("{name}: {e}"));
+                }
+            }
+            if !failed.is_empty() {
+                return Err(failed.join("; "));
+            }
         }
         _ => {}
     }

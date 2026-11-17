@@ -4,6 +4,12 @@ on:
     push:
         tags:
             - '[0-9]*'
+    workflow_dispatch:
+        inputs:
+            release_version:
+                description: Existing release tag to build and publish (for example 3.0.8)
+                required: true
+                type: string
 
 permissions:
     contents: write
@@ -21,13 +27,10 @@ jobs:
                 include:
                     - arch: x64
                       target: x86_64-pc-windows-msvc
-                      toolchain: stable-x86_64-pc-windows-msvc
                     - arch: x86
                       target: i686-pc-windows-msvc
-                      toolchain: stable-i686-pc-windows-msvc
                     - arch: arm64
                       target: aarch64-pc-windows-msvc
-                      toolchain: stable-aarch64-pc-windows-msvc
         steps:
             - name: Checkout
               uses: actions/checkout@v4
@@ -48,15 +51,12 @@ jobs:
               uses: dtolnay/rust-toolchain@stable
 
             - name: Install Rust target
-              shell: pwsh
-              run: |
-                  rustup target add ${{ matrix.target }}
-                  rustup toolchain install --force-non-host ${{ matrix.toolchain }}
+              run: rustup target add ${{ matrix.target }}
 
             - name: Set build version from tag
               shell: pwsh
               env:
-                  RELEASE_VERSION: ${{ github.ref_name }}
+                  RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
               run: |
                   node -e 'const fs=require("node:fs"); const v=process.env.RELEASE_VERSION; const p=JSON.parse(fs.readFileSync("package.json","utf8")); p.version=v; fs.writeFileSync("package.json",JSON.stringify(p,null,4)+"\n"); const t=JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8")); t.package.version=v; fs.writeFileSync("src-tauri/tauri.conf.json",JSON.stringify(t,null,4)+"\n"); const c=fs.readFileSync("src-tauri/Cargo.toml","utf8").replace(/^version = "[^"]+"$/m,`version = "${v}"`); fs.writeFileSync("src-tauri/Cargo.toml",c);'
 
@@ -83,7 +83,7 @@ jobs:
             - name: Checkout release source
               uses: actions/checkout@v4
               with:
-                  ref: ${{ github.ref }}
+                  ref: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
 
             - name: Setup Node.js
               uses: actions/setup-node@v4
@@ -108,7 +108,7 @@ jobs:
             - name: Publish version release
               uses: softprops/action-gh-release@v2
               with:
-                  tag_name: ${{ github.ref_name }}
+                  tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
                   body_path: CHANGELOG
                   files: artifacts/*
                   fail_on_unmatched_files: true
@@ -122,6 +122,6 @@ jobs:
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: updater
-                  body: Windows updater manifest for ${{ github.ref_name }}
+                  body: Windows updater manifest for ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
                   files: update.json
                   fail_on_unmatched_files: true

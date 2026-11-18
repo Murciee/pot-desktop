@@ -13,18 +13,24 @@ import { recognizeOverlay } from '../../utils/overlay_ocr';
 import { useConfig } from '../../hooks';
 
 const TOOLBAR_HEIGHT = 32;
+const TRANSLATION_TIMEOUT_MS = 30_000;
 
-function cleanErrorMessage(value) {
+function cleanErrorMessage(value, maxLength = 400) {
     let text = String(value ?? '');
     if (/<html|<title/i.test(text)) {
         const title = text.match(/<title[^>]*>(.*?)<\/title>/i)?.[1];
         text = title || text.replace(/<[^>]+>/g, ' ');
     }
-    return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+    return text
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/[^\S\r\n]+/g, ' ')
+        .replace(/\s*\r?\n\s*/g, '\n')
+        .trim()
+        .slice(0, maxLength);
 }
 
 async function notifyError(title, body, block = false) {
-    const text = cleanErrorMessage(body);
+    const text = cleanErrorMessage(body, 1200);
     logError(`[overlay] ${title}: ${text}`);
     try {
         if (block) {
@@ -165,7 +171,12 @@ export default function Overlay() {
         await appWindow.show();
 
         if (!overlayState.service) {
-            await notifyError(tr('overlay.title'), tr('overlay.no_service'), true);
+            setBlocks(normalized.map((block) => ({ ...block, error: true, errorMessage: tr('overlay.no_service') })));
+            await notifyError(
+                tr('overlay.title'),
+                `${tr('overlay.no_service')}\n\n${tr('overlay.troubleshooting')}`,
+                true
+            );
             return;
         }
 
@@ -185,7 +196,13 @@ export default function Overlay() {
                         'auto',
                         overlayState.targetLang,
                         'auto',
-                        overlayState.model
+                        overlayState.model,
+                        {
+                            timeoutMs: TRANSLATION_TIMEOUT_MS,
+                            timeoutMessage: tr('overlay.request_timeout', {
+                                seconds: TRANSLATION_TIMEOUT_MS / 1000,
+                            }),
+                        }
                     );
                     if (disposedRef.current) {
                         return;
@@ -205,15 +222,20 @@ export default function Overlay() {
                 } catch (e) {
                     failed += 1;
                     const rawError = e?.toString?.() ?? String(e);
-                    lastError = /\b429\b/.test(rawError)
+                    const errorMessage = /\b429\b/.test(rawError)
                         ? tr('overlay.rate_limited')
-                        : cleanErrorMessage(rawError);
+                        : cleanErrorMessage(rawError) || tr('overlay.block_failed');
+                    lastError = errorMessage;
                     logError(`[overlay] translate failed: ${rawError}`);
                     if (disposedRef.current) {
                         return;
                     }
                     setBlocks((prev) =>
-                        prev.map((item) => (item.id === block.id ? { ...item, error: true } : item))
+                        prev.map((item) =>
+                            item.id === block.id
+                                ? { ...item, error: true, errorMessage }
+                                : item
+                        )
                     );
                 }
             }
@@ -222,16 +244,27 @@ export default function Overlay() {
         await Promise.all(Array.from({ length: workerCount }, worker));
 
         if (!disposedRef.current) {
+            const diagnostic = [
+                `${tr('overlay.channel')}: ${overlayState.service}`,
+                lastError ? `${tr('overlay.error_detail')}: ${lastError}` : '',
+                tr('overlay.troubleshooting'),
+            ]
+                .filter(Boolean)
+                .join('\n\n');
             if (failed === normalized.length) {
                 await notifyError(
                     tr('overlay.title'),
-                    `${tr('overlay.all_failed')} (${overlayState.service})${lastError ? `\n${lastError}` : ''}`,
+                    `${tr('overlay.all_failed')}\n\n${diagnostic}`,
                     true
                 );
             } else if (failed > 0) {
-                notifyError(
+                await notifyError(
                     tr('overlay.title'),
-                    `${tr('overlay.partial_failed')} (${overlayState.service})`
+                    `${tr('overlay.partial_failed', {
+                        failed,
+                        total: normalized.length,
+                    })}\n\n${diagnostic}`,
+                    true
                 );
             }
         }
@@ -471,10 +504,9 @@ export default function Overlay() {
                 </div>
             )}
             {blocks.map((block) => {
-                if (!block.translated) {
-                    return null;
-                }
-                const text = block.translated;
+                const text =
+                    block.translated ||
+                    (block.error ? t('overlay.block_failed') : t('overlay.translating'));
                 const dpr = state?.dpr > 0 ? state.dpr : 1;
                 const originalWidth = state ? state.width / dpr : viewport.width;
                 const originalHeight = state ? state.height / dpr : viewport.height;
@@ -485,6 +517,7 @@ export default function Overlay() {
                     <div
                         key={block.id}
                         dir='auto'
+                        title={block.errorMessage || undefined}
                         ref={(element) => {
                             if (element) {
                                 blockRefs.current.set(block.id, element);
@@ -505,7 +538,8 @@ export default function Overlay() {
                                 ? '1px dashed rgba(220,38,38,0.9)'
                                 : '1px solid rgba(0,0,0,0.15)',
                             borderRadius: 4,
-                            color: '#111',
+                            color: block.error ? '#b91c1c' : block.translated ? '#111' : '#52525b',
+                            fontStyle: block.translated ? 'normal' : 'italic',
                             lineHeight: 1.15,
                             overflow: 'visible',
                             whiteSpace: 'pre-wrap',

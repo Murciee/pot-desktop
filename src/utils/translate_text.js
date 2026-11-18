@@ -98,21 +98,54 @@ async function doTranslate(instanceKey, text, from, to, detectLang, model) {
  * Translate one text block with a builtin or plugin translate service instance.
  * Results are cached in memory by instance + languages + text.
  */
-export async function translateWithService(instanceKey, text, from, to, detectLang = from, model = '') {
-    const key = `${instanceKey}\u0000${from}\u0000${to}\u0000${model}\u0000${text}`;
+export async function translateWithService(
+    instanceKey,
+    text,
+    from,
+    to,
+    detectLang = from,
+    model = '',
+    options = {}
+) {
+    const timeoutMs = Math.max(0, Number(options.timeoutMs) || 0);
+    const key = `${instanceKey}\u0000${from}\u0000${to}\u0000${model}\u0000${timeoutMs}\u0000${text}`;
     if (cache.has(key)) {
         return await cache.get(key);
     }
 
-    const promise = doTranslate(instanceKey, text, from, to, detectLang, model);
+    let timeoutId;
+    const translation = doTranslate(instanceKey, text, from, to, detectLang, model);
+    const promise = timeoutMs > 0
+        ? Promise.race([
+              translation,
+              new Promise((_, reject) => {
+                  timeoutId = setTimeout(
+                      () => reject(new Error(options.timeoutMessage || 'Translation request timed out')),
+                      timeoutMs
+                  );
+              }),
+          ])
+        : translation;
     cache.set(key, promise);
     try {
         const result = await promise;
-        cache.set(key, Promise.resolve(result));
+        if (cache.get(key) === promise) {
+            if (typeof result === 'string' && result.trim() === '') {
+                cache.delete(key);
+            } else {
+                cache.set(key, Promise.resolve(result));
+            }
+        }
         return result;
     } catch (e) {
-        cache.delete(key);
+        if (cache.get(key) === promise) {
+            cache.delete(key);
+        }
         throw e;
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
     }
 }
 

@@ -501,77 +501,197 @@ struct OverlayRectPayload {
 static OVERLAY_STATE: once_cell::sync::Lazy<std::sync::Mutex<Option<OverlayState>>> =
     once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
 
-#[cfg(target_os = "windows")]
-static OVERLAY_TARGET_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
-
 pub static OVERLAY_DIALOG_OPEN: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
-fn foreground_window() -> isize {
-    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-    unsafe { GetForegroundWindow().0 as isize }
-}
+static OVERLAY_CLICK_HWND: std::sync::atomic::AtomicIsize =
+    std::sync::atomic::AtomicIsize::new(0);
 
 #[cfg(target_os = "windows")]
-fn root_window_at(x: i32, y: i32) -> isize {
-    use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, WindowFromPoint, GA_ROOT};
-    unsafe {
-        let hwnd = WindowFromPoint(POINT { x, y });
-        if hwnd.0.is_null() {
-            return 0;
-        }
-        GetAncestor(hwnd, GA_ROOT).0 as isize
-    }
-}
+static OVERLAY_CLOSE_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
-fn root_window_of(hwnd: isize) -> isize {
-    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GA_ROOT};
-    if hwnd == 0 {
-        return 0;
+static OVERLAY_MOUSE_BUTTONS_DOWN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+static OVERLAY_MOUSE_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(target_os = "windows")]
+fn point_outside_overlay(overlay_hwnd: isize, point: &windows::Win32::Foundation::POINT) -> bool {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+
+    if overlay_hwnd == 0 {
+        return false;
     }
+    let mut bounds = RECT::default();
     unsafe {
-        GetAncestor(
-            windows::Win32::Foundation::HWND(hwnd as *mut core::ffi::c_void),
-            GA_ROOT,
+        GetWindowRect(
+            HWND(overlay_hwnd as *mut core::ffi::c_void),
+            &mut bounds,
         )
-        .0 as isize
+        .is_ok()
+            && (point.x < bounds.left
+                || point.x >= bounds.right
+                || point.y < bounds.top
+                || point.y >= bounds.bottom)
     }
 }
 
 #[cfg(target_os = "windows")]
-fn spawn_overlay_focus_watcher(window: &Window) {
+fn sample_overlay_mouse_buttons() -> (bool, bool) {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON,
+    };
+
+    let mut buttons_are_down = false;
+    let mut button_was_pressed = false;
+    unsafe {
+        for button in [VK_LBUTTON, VK_MBUTTON, VK_RBUTTON] {
+            let state = GetAsyncKeyState(button.0 as i32);
+            buttons_are_down |= state < 0;
+            button_was_pressed |= state & 1 != 0;
+        }
+    }
+    (buttons_are_down, button_was_pressed)
+}
+
+#[cfg(target_os = "windows")]
+pub fn finish_overlay_error_dialog() {
+    let _guard = OVERLAY_MOUSE_STATE_LOCK.lock().unwrap();
+    let (buttons_are_down, _) = sample_overlay_mouse_buttons();
+    OVERLAY_MOUSE_BUTTONS_DOWN.store(buttons_are_down, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_DIALOG_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn overlay_mouse_hook(
+    code: i32,
+    w_param: windows::Win32::Foundation::WPARAM,
+    l_param: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, HHOOK, MSLLHOOKSTRUCT, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN,
+    };
+
+    if code >= 0
+        && l_param.0 != 0
+        && !OVERLAY_DIALOG_OPEN.load(std::sync::atomic::Ordering::SeqCst)
+        && matches!(
+            w_param.0 as u32,
+            WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN
+        )
+    {
+        let overlay_hwnd = OVERLAY_CLICK_HWND.load(std::sync::atomic::Ordering::SeqCst);
+        let mouse = &*(l_param.0 as *const MSLLHOOKSTRUCT);
+        if point_outside_overlay(overlay_hwnd, &mouse.pt) {
+            OVERLAY_CLOSE_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    CallNextHookEx(HHOOK::default(), code, w_param, l_param)
+}
+
+#[cfg(target_os = "windows")]
+fn spawn_overlay_click_watcher(window: &Window) {
+    use windows::Win32::Foundation::{HINSTANCE, HWND, POINT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, GetCursorPos, PeekMessageW, SetWindowsHookExW, TranslateMessage,
+        UnhookWindowsHookEx, MSG, PM_REMOVE, WH_MOUSE_LL,
+    };
+
     let app_handle = APP.get().unwrap().clone();
     let overlay_hwnd = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
-    let target = OVERLAY_TARGET_HWND.load(std::sync::atomic::Ordering::SeqCst);
-    if target == 0 {
+    if overlay_hwnd == 0 {
         return;
     }
+    OVERLAY_CLICK_HWND.store(overlay_hwnd, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_CLOSE_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
+
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(800));
+        let hook = unsafe {
+            SetWindowsHookExW(WH_MOUSE_LL, Some(overlay_mouse_hook), HINSTANCE::default(), 0)
+        };
+        if let Err(error) = &hook {
+            log::error!("[overlay] failed to install mouse hook: {}", error);
+        }
+        let hook = hook.ok();
+        if hook.is_none() {
+            let _guard = OVERLAY_MOUSE_STATE_LOCK.lock().unwrap();
+            let (buttons_are_down, _) = sample_overlay_mouse_buttons();
+            OVERLAY_MOUSE_BUTTONS_DOWN
+                .store(buttons_are_down, std::sync::atomic::Ordering::SeqCst);
+        }
+
         loop {
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        if app_handle.get_window("overlay").is_none() {
-            break;
-        }
-        if OVERLAY_DIALOG_OPEN.load(std::sync::atomic::Ordering::SeqCst) {
-            continue;
-        }
-        let foreground = foreground_window();
-        let foreground_root = root_window_of(foreground);
-        if foreground_root != 0
-            && foreground_root != target
-            && foreground != overlay_hwnd
-            && foreground_root != overlay_hwnd
-        {
-            if let Some(window) = app_handle.get_window("overlay") {
-                let _ = window.close();
+            if app_handle.get_window("overlay").is_none() {
+                break;
             }
-            break;
+
+            if hook.is_some() {
+                let mut message = MSG::default();
+                unsafe {
+                    while PeekMessageW(&mut message, HWND::default(), 0, 0, PM_REMOVE).as_bool() {
+                        let _ = TranslateMessage(&message);
+                        DispatchMessageW(&message);
+                    }
+                }
+                if OVERLAY_CLOSE_REQUESTED.swap(false, std::sync::atomic::Ordering::SeqCst) {
+                    if let Some(window) = app_handle.get_window("overlay") {
+                        let _ = window.close();
+                    }
+                    break;
+                }
+            } else {
+                let (buttons_are_down, button_was_pressed, buttons_were_down, dialog_open) = {
+                    let _guard = OVERLAY_MOUSE_STATE_LOCK.lock().unwrap();
+                    let (buttons_are_down, button_was_pressed) = sample_overlay_mouse_buttons();
+                    let buttons_were_down = OVERLAY_MOUSE_BUTTONS_DOWN.swap(
+                        buttons_are_down,
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
+                    let dialog_open =
+                        OVERLAY_DIALOG_OPEN.load(std::sync::atomic::Ordering::SeqCst);
+                    (
+                        buttons_are_down,
+                        button_was_pressed,
+                        buttons_were_down,
+                        dialog_open,
+                    )
+                };
+
+                if !dialog_open
+                    && (button_was_pressed || (buttons_are_down && !buttons_were_down))
+                {
+                    let mut cursor = POINT::default();
+                    if unsafe { GetCursorPos(&mut cursor).is_ok() }
+                        && point_outside_overlay(overlay_hwnd, &cursor)
+                    {
+                        if let Some(window) = app_handle.get_window("overlay") {
+                            let _ = window.close();
+                        }
+                        break;
+                    }
+                }
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(if hook.is_some() {
+                10
+            } else {
+                2
+            }));
         }
+
+        if let Some(hook) = hook {
+            unsafe {
+                let _ = UnhookWindowsHookEx(hook);
+            }
         }
+        OVERLAY_CLICK_HWND.store(0, std::sync::atomic::Ordering::SeqCst);
+        OVERLAY_CLOSE_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
     });
 }
 static OVERLAY_LISTENER_ID: once_cell::sync::Lazy<
@@ -596,20 +716,6 @@ pub fn overlay_translate() {
     let window_for_listener = window.clone();
     let id = window.listen("overlay_rect", move |event| {
         if let Ok(rect) = serde_json::from_str::<OverlayRectPayload>(event.payload().unwrap_or_default()) {
-            // The screenshot window hides itself before emitting. The window
-            // under the selection center is therefore the page being covered.
-            let screenshot_hwnd = window_for_listener
-                .hwnd()
-                .map(|h| h.0 as isize)
-                .unwrap_or(0);
-            let mut target = root_window_at(
-                rect.screen_x + rect.width as i32 / 2,
-                rect.screen_y + rect.height as i32 / 2,
-            );
-            if target == screenshot_hwnd {
-                target = root_window_of(foreground_window());
-            }
-            OVERLAY_TARGET_HWND.store(target, std::sync::atomic::Ordering::SeqCst);
             let monitor = window_for_listener.current_monitor().ok().flatten();
             let monitor_position = monitor
                 .as_ref()
@@ -734,7 +840,7 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
         window.outer_size().ok()
     );
 
-    spawn_overlay_focus_watcher(&window);
+    spawn_overlay_click_watcher(&window);
 
     Ok(window)
 }

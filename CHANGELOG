@@ -1,3 +1,9 @@
+## 3.0.15 (2026-11-18)
+
+### Notes:
+
+-   Start a new updater signing key. Existing installations must install 3.0.15 manually once before automatic updates resume.
+
 ## 3.0.14 (2026-11-18)
 
 ### Bugs fixed:

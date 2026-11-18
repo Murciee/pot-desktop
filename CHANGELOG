@@ -1,3 +1,9 @@
+## 3.0.16 (2026-11-19)
+
+### Bugs fixed:
+
+-   Remove the white square corners outside the rounded configuration window on Windows.
+
 ## 3.0.15 (2026-11-18)
 
 ### Notes:

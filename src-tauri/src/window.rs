@@ -105,8 +105,12 @@ fn build_window(label: &str, title: &str) -> (Window, bool) {
             }
             let window = builder.build().unwrap();
 
-            if label != "screenshot" {
-                #[cfg(not(target_os = "linux"))]
+            #[cfg(target_os = "windows")]
+            let use_shadow = label != "config";
+            #[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
+            let use_shadow = true;
+            #[cfg(not(target_os = "linux"))]
+            if label != "screenshot" && use_shadow {
                 set_shadow(&window, true).unwrap_or_default();
             }
             let _ = window.current_monitor();

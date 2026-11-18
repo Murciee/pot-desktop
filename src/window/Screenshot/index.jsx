@@ -108,7 +108,6 @@ export default function Screenshot() {
                             if (!isDown || !imgRef.current?.naturalWidth) {
                                 return;
                             }
-                            await appWindow.hide();
                             setIsDown(false);
                             setIsMoved(false);
                             const imgWidth = imgRef.current.naturalWidth;
@@ -121,32 +120,32 @@ export default function Screenshot() {
                             const height = bottom - top;
                             if (width <= 0 || height <= 0) {
                                 warn('Screenshot area is too small');
+                                return;
+                            }
+                            await appWindow.hide();
+                            try {
+                                const cropInfo = await invoke('cut_image', { left, top, width, height });
+                                const monitor = await currentMonitor();
+                                await emit('overlay_rect', {
+                                    left,
+                                    top,
+                                    width,
+                                    height,
+                                    dpr: dpi,
+                                    screenX: monitor.position.x + left,
+                                    screenY: monitor.position.y + top,
+                                    paddingLeft: cropInfo.paddingLeft,
+                                    paddingTop: cropInfo.paddingTop,
+                                });
+                                await emit('success');
                                 await appWindow.close();
-                            } else {
-                                try {
-                                    const cropInfo = await invoke('cut_image', { left, top, width, height });
-                                    const monitor = await currentMonitor();
-                                    await emit('overlay_rect', {
-                                        left,
-                                        top,
-                                        width,
-                                        height,
-                                        dpr: dpi,
-                                        screenX: monitor.position.x + left,
-                                        screenY: monitor.position.y + top,
-                                        paddingLeft: cropInfo.paddingLeft,
-                                        paddingTop: cropInfo.paddingTop,
-                                    });
-                                    await emit('success');
-                                    await appWindow.close();
-                                } catch (error) {
-                                    warn(`Failed to crop screenshot: ${error}`);
-                                    void sendNotification({
-                                        title: t('overlay.capture_failed_title'),
-                                        body: `${t('overlay.capture_failed_body')} ${error}`,
-                                    }).catch(() => {});
-                                    await appWindow.close();
-                                }
+                            } catch (error) {
+                                warn(`Failed to crop screenshot: ${error}`);
+                                void sendNotification({
+                                    title: t('overlay.capture_failed_title'),
+                                    body: `${t('overlay.capture_failed_body')} ${error}`,
+                                }).catch(() => {});
+                                await appWindow.close();
                             }
                         }}
                     />

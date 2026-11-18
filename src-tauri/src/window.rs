@@ -128,7 +128,7 @@ pub fn config_window() {
 fn translate_window() -> Window {
     use mouse_position::mouse_position::{Mouse, Position};
     // Mouse physical position
-    let mut mouse_position = match Mouse::get_mouse_position() {
+    let mouse_position = match Mouse::get_mouse_position() {
         Mouse::Position { x, y } => Position { x, y },
         Mouse::Error => {
             warn!("Mouse position not found, using (0, 0) as default");
@@ -171,39 +171,29 @@ fn translate_window() -> Window {
         None => "mouse".to_string(),
     };
 
-    match position_type.as_str() {
+    let (mut pos_x, mut pos_y) = match position_type.as_str() {
         "mouse" => {
             // Adjust window position
             let monitor_size = monitor.size();
-            let monitor_size_width = monitor_size.width as f64;
-            let monitor_size_height = monitor_size.height as f64;
             let monitor_position = monitor.position();
-            let monitor_position_x = monitor_position.x as f64;
-            let monitor_position_y = monitor_position.y as f64;
+            let window_width = (width as f64 * dpi) as i32;
+            let window_height = (height as f64 * dpi) as i32;
+            let mut x = mouse_position.x;
+            let mut y = mouse_position.y;
 
-            if mouse_position.x as f64 + width as f64 * dpi
-                > monitor_position_x + monitor_size_width
-            {
-                mouse_position.x -= (width as f64 * dpi) as i32;
-                if (mouse_position.x as f64) < monitor_position_x {
-                    mouse_position.x = monitor_position_x as i32;
+            if x + window_width > monitor_position.x + monitor_size.width as i32 {
+                x -= window_width;
+                if x < monitor_position.x {
+                    x = monitor_position.x;
                 }
             }
-            if mouse_position.y as f64 + height as f64 * dpi
-                > monitor_position_y + monitor_size_height
-            {
-                mouse_position.y -= (height as f64 * dpi) as i32;
-                if (mouse_position.y as f64) < monitor_position_y {
-                    mouse_position.y = monitor_position_y as i32;
+            if y + window_height > monitor_position.y + monitor_size.height as i32 {
+                y -= window_height;
+                if y < monitor_position.y {
+                    y = monitor_position.y;
                 }
             }
-
-            window
-                .set_position(tauri::PhysicalPosition::new(
-                    mouse_position.x,
-                    mouse_position.y,
-                ))
-                .unwrap();
+            (x, y)
         }
         _ => {
             let position_x = match get("translate_window_position_x") {
@@ -214,14 +204,39 @@ fn translate_window() -> Window {
                 Some(v) => v.as_i64().unwrap(),
                 None => 0,
             };
-            window
-                .set_position(tauri::PhysicalPosition::new(
-                    (position_x as f64) * dpi,
-                    (position_y as f64) * dpi,
-                ))
-                .unwrap();
+            (
+                (position_x as f64 * dpi) as i32,
+                (position_y as f64 * dpi) as i32,
+            )
         }
-    }
+    };
+
+    // Keep the window fully inside the monitor it targets. Saved positions can
+    // point outside the current screen, for example after switching monitors,
+    // changing the resolution or reconnecting over RDP.
+    let target_monitor = window
+        .available_monitors()
+        .ok()
+        .and_then(|monitors| {
+            monitors.into_iter().find(|m| {
+                let p = m.position();
+                let s = m.size();
+                pos_x >= p.x && pos_x < p.x + s.width as i32 && pos_y >= p.y && pos_y < p.y + s.height as i32
+            })
+        })
+        .unwrap_or_else(|| monitor.clone());
+    let monitor_position = target_monitor.position();
+    let monitor_size = target_monitor.size();
+    let window_width = (width as f64 * dpi) as i32;
+    let window_height = (height as f64 * dpi) as i32;
+    let max_x = monitor_position.x + monitor_size.width as i32 - window_width;
+    let max_y = monitor_position.y + monitor_size.height as i32 - window_height;
+    pos_x = pos_x.clamp(monitor_position.x, max_x.max(monitor_position.x));
+    pos_y = pos_y.clamp(monitor_position.y, max_y.max(monitor_position.y));
+
+    window
+        .set_position(tauri::PhysicalPosition::new(pos_x, pos_y))
+        .unwrap();
 
     window
 }
@@ -240,7 +255,9 @@ pub fn selection_translate() {
     state.0.lock().unwrap().replace_range(.., &text);
 
     let window = translate_window();
-    window.emit("new_text", text).unwrap();
+    let _ = window.emit("new_text", text);
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 pub fn input_translate() {
@@ -261,7 +278,9 @@ pub fn input_translate() {
         window.center().unwrap();
     }
 
-    window.emit("new_text", "[INPUT_TRANSLATE]").unwrap();
+    let _ = window.emit("new_text", "[INPUT_TRANSLATE]");
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 pub fn last_translate_window() {
@@ -281,6 +300,8 @@ pub fn last_translate_window() {
 
     let window = translate_window();
     let _ = window.emit("new_text", "[LAST_TRANSLATE]");
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 pub fn text_translate(text: String) {
@@ -293,7 +314,9 @@ pub fn text_translate(text: String) {
     let state: tauri::State<StringWrapper> = app_handle.state();
     state.0.lock().unwrap().replace_range(.., &text);
     let window = translate_window();
-    window.emit("new_text", text).unwrap();
+    let _ = window.emit("new_text", text);
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 pub fn image_translate() {
@@ -305,7 +328,9 @@ pub fn image_translate() {
         .unwrap()
         .replace_range(.., "[IMAGE_TRANSLATE]");
     let window = translate_window();
-    window.emit("new_text", "[IMAGE_TRANSLATE]").unwrap();
+    let _ = window.emit("new_text", "[IMAGE_TRANSLATE]");
+    let _ = window.show();
+    let _ = window.set_focus();
 }
 
 pub fn recognize_window() {

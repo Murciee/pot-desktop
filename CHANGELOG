@@ -1,3 +1,11 @@
+## 3.0.12 (2026-11-18)
+
+### Bugs fixed:
+
+-   Fix the translate window rendering an empty transparent frame because `TargetArea` crashed on an undefined `useAtom`.
+-   Show a readable message instead of a blank window when a window fails to render.
+-   Keep loading the remaining plugins when one plugin fails to load.
+
 ## 3.0.11 (2026-11-18)
 
 ### Bugs fixed:

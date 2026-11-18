@@ -26,6 +26,44 @@ const windowMap = {
     updater: <Updater />,
 };
 
+class WindowErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { message: '' };
+    }
+
+    static getDerivedStateFromError(e) {
+        return { message: String((e && e.stack) || e) };
+    }
+
+    componentDidCatch(e) {
+        warn(`[window:${appWindow.label}] render failed: ${(e && e.stack) || e}`);
+    }
+
+    render() {
+        if (this.state.message) {
+            return (
+                <div
+                    style={{
+                        padding: 16,
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                        height: '100vh',
+                        overflow: 'auto',
+                        background: '#202020',
+                        color: '#e7e7e7',
+                    }}
+                >
+                    {this.state.message}
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 export default function App() {
     const [devMode] = useConfig('dev_mode', false);
     const [appTheme] = useConfig('app_theme', 'system');
@@ -115,5 +153,15 @@ export default function App() {
         }
     }, [appFont, appFallbackFont, appFontSize]);
 
-    return <BrowserRouter>{windowMap[appWindow.label]}</BrowserRouter>;
+    return (
+        <WindowErrorBoundary>
+            <BrowserRouter>
+                {windowMap[appWindow.label] ?? (
+                    <div style={{ padding: 16, fontFamily: 'monospace', color: '#e7e7e7' }}>
+                        Unknown window label: {appWindow.label}
+                    </div>
+                )}
+            </BrowserRouter>
+        </WindowErrorBoundary>
+    );
 }

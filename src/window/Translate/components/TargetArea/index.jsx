@@ -26,7 +26,7 @@ import { useTranslation } from 'react-i18next';
 import Database from 'tauri-plugin-sql-api';
 import { GiCycle } from 'react-icons/gi';
 import { useTheme } from 'next-themes';
-import { useAtomValue } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { nanoid } from 'nanoid';
 import { useSpring, animated } from '@react-spring/web';
 import useMeasure from 'react-use-measure';

@@ -16,6 +16,7 @@ import { osType } from '../../utils/env';
 import { useConfig } from '../../hooks';
 import { store } from '../../utils/store';
 import { info } from 'tauri-plugin-log-api';
+import { error } from 'tauri-plugin-log-api';
 
 let blurTimeout = null;
 let resizeTimeout = null;
@@ -167,23 +168,31 @@ export default function Translate() {
         let temp = {};
         for (const serviceType of serviceTypeList) {
             temp[serviceType] = {};
-            if (await exists(`plugins/${serviceType}`, { dir: BaseDirectory.AppConfig })) {
-                const plugins = await readDir(`plugins/${serviceType}`, { dir: BaseDirectory.AppConfig });
-                for (const plugin of plugins) {
-                    const infoStr = await readTextFile(`plugins/${serviceType}/${plugin.name}/info.json`, {
-                        dir: BaseDirectory.AppConfig,
-                    });
-                    let pluginInfo = JSON.parse(infoStr);
-                    if ('icon' in pluginInfo) {
-                        const appConfigDirPath = await appConfigDir();
-                        const iconPath = await join(
-                            appConfigDirPath,
-                            `/plugins/${serviceType}/${plugin.name}/${pluginInfo.icon}`
-                        );
-                        pluginInfo.icon = convertFileSrc(iconPath);
+            try {
+                if (await exists(`plugins/${serviceType}`, { dir: BaseDirectory.AppConfig })) {
+                    const plugins = await readDir(`plugins/${serviceType}`, { dir: BaseDirectory.AppConfig });
+                    for (const plugin of plugins) {
+                        try {
+                            const infoStr = await readTextFile(`plugins/${serviceType}/${plugin.name}/info.json`, {
+                                dir: BaseDirectory.AppConfig,
+                            });
+                            let pluginInfo = JSON.parse(infoStr);
+                            if ('icon' in pluginInfo) {
+                                const appConfigDirPath = await appConfigDir();
+                                const iconPath = await join(
+                                    appConfigDirPath,
+                                    `/plugins/${serviceType}/${plugin.name}/${pluginInfo.icon}`
+                                );
+                                pluginInfo.icon = convertFileSrc(iconPath);
+                            }
+                            temp[serviceType][plugin.name] = pluginInfo;
+                        } catch (e) {
+                            error(`Failed to load ${serviceType} plugin ${plugin.name}: ${e}`);
+                        }
                     }
-                    temp[serviceType][plugin.name] = pluginInfo;
                 }
+            } catch (e) {
+                error(`Failed to scan ${serviceType} plugins: ${e}`);
             }
         }
         setPluginList({ ...temp });

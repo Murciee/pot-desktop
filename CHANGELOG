@@ -1,3 +1,11 @@
+## 3.0.14 (2026-11-18)
+
+### Bugs fixed:
+
+-   Close Windows overlay translation only when clicking outside the overlay, instead of when the window loses focus.
+-   Show translating and failed states in the overlay, time out unresponsive translation channels, and report the channel, error details and troubleshooting steps.
+-   Do not cache empty translation results, so refreshing the overlay requests them again.
+
 ## 3.0.13 (2026-11-18)
 
 ### New features:

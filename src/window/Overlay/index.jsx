@@ -1,4 +1,4 @@
-import { appWindow, LogicalSize } from '@tauri-apps/api/window';
+import { appWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { sendNotification } from '@tauri-apps/api/notification';
 import { invoke } from '@tauri-apps/api';
@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState } from 'react';
 
 import { translateWithService } from '../../utils/translate_text';
 import { mergeLineBoxes, normalizeBlocks } from '../../utils/overlay_layout';
-import { recognizeWithBoxes } from '../../services/recognize/system';
+import { recognizeOverlay } from '../../utils/overlay_ocr';
 import { useConfig } from '../../hooks';
 
 const TOOLBAR_HEIGHT = 32;
@@ -102,29 +102,55 @@ export default function Overlay() {
         };
 
         let boxes;
+        let plainText = '';
+        let hasBoxes = false;
         try {
-            boxes = await recognizeWithBoxes(overlayState.ocrLang);
+            const recognized = await recognizeOverlay(overlayState.ocrService, overlayState.ocrLang);
+            hasBoxes = Array.isArray(recognized.boxes);
+            if (hasBoxes) {
+                boxes = recognized.boxes;
+            } else {
+                plainText = String(recognized.text ?? '').trim();
+            }
         } catch (e) {
             await showErrorAndClose(
                 (tr('overlay.ocr_failed') ?? '') + (e?.toString() ?? String(e))
             );
             return;
         }
-        info(`[overlay] OCR returned ${boxes.length} line boxes`);
 
-        const merged = mergeLineBoxes(boxes);
-        info(`[overlay] merged into ${merged.length} text blocks`);
-        if (merged.length === 0) {
+        if (!hasBoxes && !plainText) {
             await showErrorAndClose(tr('overlay.no_text'));
             return;
         }
 
-        // cut_image adds padding; OCR coordinates are relative to the padded image.
-        const trimmed = merged.map((block) => ({
-            ...block,
-            x: block.x - (overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1))),
-            y: block.y - (overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1))),
-        }));
+        let trimmed;
+        if (!hasBoxes) {
+            info('[overlay] OCR returned plain text, using a single block for the selection');
+            trimmed = [
+                {
+                    x: 0,
+                    y: 0,
+                    w: overlayState.width,
+                    h: overlayState.height,
+                    text: plainText,
+                },
+            ];
+        } else {
+            info(`[overlay] OCR returned ${boxes.length} line boxes`);
+            const merged = mergeLineBoxes(boxes);
+            info(`[overlay] merged into ${merged.length} text blocks`);
+            if (merged.length === 0) {
+                await showErrorAndClose(tr('overlay.no_text'));
+                return;
+            }
+            // cut_image adds padding; OCR coordinates are relative to the padded image.
+            trimmed = merged.map((block) => ({
+                ...block,
+                x: block.x - (overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1))),
+                y: block.y - (overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1))),
+            }));
+        }
         const normalized = normalizeBlocks(
             trimmed,
             overlayState.width,
@@ -292,10 +318,9 @@ export default function Overlay() {
         };
     }, []);
 
-    // Keep OCR positions anchored to the original capture size, then move later
-    // translated blocks down only when their expanded text boxes would overlap.
+    // Every block keeps the original OCR box, and the font shrinks until the
+    // translation fits inside it, so the overlay never grows past the selection.
     useEffect(() => {
-        let layoutFrame = null;
         const frame = requestAnimationFrame(() => {
             const overlayState = state;
             if (!overlayState || blocks.length === 0) {
@@ -304,7 +329,8 @@ export default function Overlay() {
             const dpr = overlayState.dpr > 0 ? overlayState.dpr : 1;
             const originalWidth = overlayState.width / dpr;
             const originalHeight = overlayState.height / dpr;
-            const baseSize = Math.max(1, (Number(appFontSize) || 16) * fontScale);
+            const baseSize = Math.max(6, (Number(appFontSize) || 16) * fontScale);
+            const minSize = 6;
 
             blocks.forEach((block) => {
                 const element = blockRefs.current.get(block.id);
@@ -314,63 +340,28 @@ export default function Overlay() {
                 const blockHeight = block.nh * originalHeight;
                 const blockWidth = block.nw * originalWidth;
                 const vertical = blockHeight > blockWidth * 1.5;
-                const fontSize = Math.max(
-                    9,
+                const maxSize = Math.max(
+                    minSize,
                     Math.min((vertical ? blockWidth : blockHeight) * 0.72, baseSize)
                 );
-                element.style.fontSize = `${fontSize}px`;
-                element.style.overflow = 'visible';
-            });
 
-            // Font-size changes affect wrapping, so measure and position after layout.
-            layoutFrame = requestAnimationFrame(() => {
-                const gap = 6;
-                const placed = [];
-                const orderedBlocks = blocks
-                    .map((block) => ({ block, element: blockRefs.current.get(block.id) }))
-                    .filter(({ element }) => element)
-                    .sort(
-                        (a, b) =>
-                            a.block.ny - b.block.ny || a.block.nx - b.block.nx
-                    );
-
-                orderedBlocks.forEach(({ block, element }) => {
-                    const rect = element.getBoundingClientRect();
-                    const left = block.nx * originalWidth;
-                    const right = left + rect.width;
-                    let top = block.ny * originalHeight;
-                    const overlappingBlocks = placed.filter(
-                        (item) => left < item.right && right > item.left
-                    );
-
-                    overlappingBlocks.forEach((item) => {
-                        top = Math.max(top, item.bottom + gap);
-                    });
-                    element.style.top = `${top}px`;
-                    placed.push({ left, right, top, bottom: top + rect.height });
-                });
-
-                let maxRight = 0;
-                let maxBottom = 0;
-                blockRefs.current.forEach((element) => {
-                    const rect = element.getBoundingClientRect();
-                    maxRight = Math.max(maxRight, rect.right);
-                    maxBottom = Math.max(maxBottom, rect.bottom);
-                });
-
-                const width = Math.max(viewport.width, Math.ceil(maxRight + 8));
-                const height = Math.max(viewport.height, Math.ceil(maxBottom + 8));
-                if (width > viewport.width + 1 || height > viewport.height + 1) {
-                    appWindow.setSize(new LogicalSize(width, height)).catch(() => {});
+                element.style.overflow = 'hidden';
+                let size = maxSize;
+                element.style.fontSize = `${size}px`;
+                let guard = 0;
+                while (
+                    size > minSize &&
+                    guard < 60 &&
+                    (element.scrollHeight > element.clientHeight + 1 ||
+                        element.scrollWidth > element.clientWidth + 1)
+                ) {
+                    size = Math.max(minSize, size - 0.5);
+                    element.style.fontSize = `${size}px`;
+                    guard += 1;
                 }
             });
         });
-        return () => {
-            cancelAnimationFrame(frame);
-            if (layoutFrame !== null) {
-                cancelAnimationFrame(layoutFrame);
-            }
-        };
+        return () => cancelAnimationFrame(frame);
     }, [blocks, viewport, fontScale, appFontSize, state]);
 
     const opacity = Math.min(1, Math.max(0.3, Number(overlayOpacity) || 0.85));
@@ -506,7 +497,7 @@ export default function Overlay() {
                             left: `${block.nx * originalWidth}px`,
                             top: `${block.ny * originalHeight}px`,
                             width: `${blockWidth}px`,
-                            minHeight: `${blockHeight}px`,
+                            height: `${blockHeight}px`,
                             boxSizing: 'border-box',
                             padding: '2px 4px',
                             background: `rgba(255,255,255,${opacity})`,

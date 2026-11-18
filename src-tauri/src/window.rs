@@ -481,6 +481,7 @@ pub struct OverlayState {
     pub service: String,
     pub model: String,
     pub target_lang: String,
+    pub ocr_service: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -631,6 +632,7 @@ pub fn overlay_translate() {
                 service: overlay_service_instance(),
                 model: overlay_model(),
                 target_lang: overlay_target_language(),
+                ocr_service: overlay_ocr_service(),
             };
             info!("Overlay rect: {:?}", state);
             *OVERLAY_STATE.lock().unwrap() = Some(state.clone());
@@ -775,6 +777,18 @@ fn overlay_model() -> String {
     get("overlay_model")
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_default()
+}
+
+fn overlay_ocr_service() -> String {
+    if let Some(service) = get("overlay_ocr_service").and_then(|v| v.as_str().map(|s| s.to_string())) {
+        if !service.is_empty() {
+            return service;
+        }
+    }
+    get("recognize_service_list")
+        .and_then(|v| v.as_array().and_then(|list| list.first().cloned()))
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "system".to_string())
 }
 
 fn overlay_target_language() -> String {

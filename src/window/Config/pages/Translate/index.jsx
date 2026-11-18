@@ -10,8 +10,10 @@ import { Input } from '@nextui-org/react';
 import { Card } from '@nextui-org/react';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BaseDirectory, readTextFile } from '@tauri-apps/api/fs';
 
 import { languageList } from '../../../../utils/language';
+import { getServiceName, getServiceSouceType, ServiceSourceType } from '../../../../utils/service_instance';
 import { useConfig } from '../../../../hooks/useConfig';
 import { store } from '../../../../utils/store';
 import { osType } from '../../../../utils/env';
@@ -41,7 +43,9 @@ export default function Translate() {
     const [closeOnBlur, setCloseOnBlur] = useConfig('translate_close_on_blur', true);
     const [alwaysOnTop, setAlwaysOnTop] = useConfig('translate_always_on_top', false);
     const [translateServiceInstanceList] = useConfig('translate_service_list', []);
+    const [recognizeServiceInstanceList] = useConfig('recognize_service_list', ['system', 'tesseract']);
     const [overlayService, setOverlayService] = useConfig('overlay_service_instance', '');
+    const [overlayOcrService, setOverlayOcrService] = useConfig('overlay_ocr_service', '');
     const [overlayModel, setOverlayModel] = useConfig('overlay_model', '');
     const [overlayTargetLanguage, setOverlayTargetLanguage] = useConfig('overlay_target_language', '');
     const [overlayOpacity, setOverlayOpacity] = useConfig('overlay_opacity', 0.85);
@@ -55,6 +59,11 @@ export default function Translate() {
     const [overlayModelError, setOverlayModelError] = useState('');
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const overlayOcrOptions = recognizeServiceInstanceList?.length
+        ? recognizeServiceInstanceList
+        : ['system'];
+    const effectiveOverlayOcrService =
+        overlayOcrService || overlayOcrOptions[0] || 'system';
     const effectiveOverlayService =
         overlayService || (translateServiceInstanceList ?? [])[0] || '';
     const overlayServiceName = effectiveOverlayService.split('@')[0];
@@ -71,6 +80,29 @@ export default function Translate() {
                 const instanceConfig = (await store.get(instanceKey)) ?? {};
                 names[instanceKey] = instanceConfig.instanceName || instanceKey.split('@')[0];
             }
+            for (const instanceKey of recognizeServiceInstanceList ?? []) {
+                const instanceConfig = (await store.get(instanceKey)) ?? {};
+                const serviceName = getServiceName(instanceKey);
+                let serviceDisplay = serviceName;
+                if (getServiceSouceType(instanceKey) === ServiceSourceType.PLUGIN) {
+                    try {
+                        const info = JSON.parse(
+                            await readTextFile(`plugins/recognize/${serviceName}/info.json`, {
+                                dir: BaseDirectory.AppConfig,
+                            })
+                        );
+                        serviceDisplay = info.display || serviceName;
+                    } catch {
+                        // Keep the plugin id as a stable fallback if its metadata is unavailable.
+                    }
+                } else {
+                    serviceDisplay = t(`services.recognize.${serviceName}.title`);
+                    if (serviceDisplay === `services.recognize.${serviceName}.title`) {
+                        serviceDisplay = serviceName;
+                    }
+                }
+                names[instanceKey] = instanceConfig.instanceName || serviceDisplay;
+            }
             if (!disposed) {
                 setInstanceNames(names);
             }
@@ -78,7 +110,7 @@ export default function Translate() {
         return () => {
             disposed = true;
         };
-    }, [translateServiceInstanceList]);
+    }, [translateServiceInstanceList, recognizeServiceInstanceList, t]);
 
     useEffect(() => {
         let disposed = false;
@@ -468,6 +500,32 @@ export default function Translate() {
                                 </Dropdown>
                             )}
                         </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_ocr_service')}</h3>
+                            {overlayOcrService !== null && (
+                                <Dropdown>
+                                    <DropdownTrigger>
+                                        <Button variant='bordered' className='w-full max-w-[320px]'>
+                                            {instanceNames[effectiveOverlayOcrService] || effectiveOverlayOcrService}
+                                        </Button>
+                                    </DropdownTrigger>
+                                    <DropdownMenu
+                                        aria-label='overlay OCR service'
+                                        className='max-h-[50vh] overflow-y-auto'
+                                        onAction={(key) => setOverlayOcrService(String(key))}
+                                    >
+                                        {overlayOcrOptions.map((instanceKey) => (
+                                            <DropdownItem key={instanceKey}>
+                                                {instanceNames[instanceKey] || getServiceName(instanceKey)}
+                                            </DropdownItem>
+                                        ))}
+                                    </DropdownMenu>
+                                </Dropdown>
+                            )}
+                        </div>
+                        <p className='mb-2 text-[11px] text-default-500'>
+                            {t('config.translate.overlay_ocr_service_hint')}
+                        </p>
                         {overlayModelVisible && (
                             <div className='config-item'>
                                 <h3 className='my-auto mx-0'>{t('config.translate.overlay_model')}</h3>

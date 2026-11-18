@@ -1,3 +1,11 @@
+## 3.0.13 (2026-11-18)
+
+### New features:
+
+-   Allow choosing the OCR engine used by Windows overlay translation.
+-   Keep the overlay window at the selected region size and fit translated text within each OCR box.
+-   Use a single selection-sized translation block when the chosen OCR engine does not return text boxes.
+
 ## 3.0.12 (2026-11-18)
 
 ### Bugs fixed:

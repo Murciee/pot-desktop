@@ -40,7 +40,7 @@ export default function About() {
                         className='my-[5px]'
                         size='sm'
                         onPress={() => {
-                            open('https://github.com/pot-app/pot-desktop');
+                            open('https://github.com/Murciee/pot-desktop');
                         }}
                     >
                         {t('config.about.github')}
@@ -65,7 +65,7 @@ export default function About() {
                                     className='my-[5px]'
                                     size='sm'
                                     onPress={() => {
-                                        open('https://github.com/pot-app/pot-desktop/issues');
+                                        open('https://github.com/Murciee/pot-desktop/issues');
                                     }}
                                 >
                                     {t('config.about.issue')}
@@ -145,7 +145,7 @@ export default function About() {
                                         className='my-[5px]'
                                         size='lg'
                                         onPress={() => {
-                                            open('https://github.com/pot-app/pot-desktop/discussions');
+                                            open('https://github.com/Murciee/pot-desktop/discussions');
                                         }}
                                     >
                                         <BsGithub />

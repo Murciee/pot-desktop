@@ -1,3 +1,13 @@
+## 3.0.18 (2026-11-19)
+
+### Bugs fixed:
+
+-   Open the settings window on Tauri's main thread, so opening it from the HTTP API no longer deadlocks.
+-   Rework the settings layout to right-aligned controls; proxy, hotkey, backup and plugin fields are no longer clipped or wrapped.
+-   Default the settings window to 760x560, keep it from being resized narrower than 760, and remember its size and position.
+-   Read saved configuration before the first render, prefetch the autostart state and render font dropdowns before the font list arrives, so switching pages no longer shifts the layout.
+-   Start every settings page at the top instead of keeping the previous page's scroll offset.
+
 ## 3.0.17 (2026-11-19)
 
 ### New features:

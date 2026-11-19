@@ -213,7 +213,7 @@ export default function Backup() {
                                 onValueChange={(v) => {
                                     setDavUrl(v);
                                 }}
-                                className='max-w-[300px]'
+                                className='w-[300px] max-w-full'
                             />
                         )}
                     </div>
@@ -227,7 +227,7 @@ export default function Backup() {
                                 onValueChange={(v) => {
                                     setDavUserName(v);
                                 }}
-                                className='max-w-[300px]'
+                                className='w-[300px] max-w-full'
                             />
                         )}
                     </div>
@@ -242,7 +242,7 @@ export default function Backup() {
                                 onValueChange={(v) => {
                                     setDavPassword(v);
                                 }}
-                                className='max-w-[300px]'
+                                className='w-[300px] max-w-full'
                             />
                         )}
                     </div>

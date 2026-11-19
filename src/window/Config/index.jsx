@@ -1,5 +1,5 @@
 import { useLocation, useRoutes } from 'react-router-dom';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { appWindow } from '@tauri-apps/api/window';
 import { Card, Divider } from '@nextui-org/react';
 import { useTranslation } from 'react-i18next';
@@ -16,12 +16,21 @@ export default function Config() {
     const { t } = useTranslation();
     const location = useLocation();
     const page = useRoutes(routes);
+    const contentRef = useRef(null);
 
     useEffect(() => {
         if (appWindow.label === 'config') {
             appWindow.show();
         }
     }, []);
+
+    // Start every settings page at the top: keeping the previous scroll offset
+    // made the new page's controls appear shifted down.
+    useLayoutEffect(() => {
+        if (contentRef.current) {
+            contentRef.current.scrollTop = 0;
+        }
+    }, [location.pathname]);
 
     return (
         <div
@@ -73,6 +82,7 @@ export default function Config() {
                 </div>
                 <Divider />
                 <div
+                    ref={contentRef}
                     className='min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-[10px]'
                 >
                     {page}

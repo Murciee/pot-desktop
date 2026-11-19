@@ -123,8 +123,8 @@ fn save_config_window_geometry(window: &Window) {
     let factor = window.scale_factor().unwrap_or(1.0);
     if let Ok(size) = window.outer_size() {
         let size = size.to_logical::<f64>(factor);
-        set("config_window_width", size.width.round() as i64);
-        set("config_window_height", size.height.round() as i64);
+        set("config_window_width_v2", size.width.round() as i64);
+        set("config_window_height_v2", size.height.round() as i64);
     }
     if let Ok(position) = window.outer_position() {
         let position = position.to_logical::<f64>(factor);
@@ -135,20 +135,23 @@ fn save_config_window_geometry(window: &Window) {
 
 pub fn config_window() {
     let (window, exists) = build_window("config", "Config");
+    info!("Config window built, exists: {}", exists);
     window
-        .set_min_size(Some(tauri::LogicalSize::new(800, 400)))
+        .set_min_size(Some(tauri::LogicalSize::new(760, 400)))
         .unwrap();
 
     if !exists {
-        let width = get("config_window_width")
+        let width = get("config_window_width_v2")
             .and_then(|v| v.as_i64())
-            .unwrap_or(800) as f64;
-        let height = get("config_window_height")
+            .unwrap_or(760)
+            .max(760) as f64;
+        let height = get("config_window_height_v2")
             .and_then(|v| v.as_i64())
-            .unwrap_or(600) as f64;
+            .unwrap_or(560) as f64;
         window
             .set_size(tauri::LogicalSize::new(width, height))
             .unwrap();
+        info!("Config window size set: {}x{}", width, height);
 
         match (
             get("config_window_x").and_then(|v| v.as_i64()),
@@ -166,6 +169,8 @@ pub fn config_window() {
         let _ = window.listen("tauri://close-requested", move |_| {
             save_config_window_geometry(&window_for_save);
         });
+        info!("Config window geometry listener attached");
+        let _ = window.show();
     }
 }
 

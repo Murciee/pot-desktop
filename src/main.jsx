@@ -6,6 +6,7 @@ import React from 'react';
 
 import { initStore } from './utils/store';
 import { initEnv } from './utils/env';
+import { initAutoStart } from './utils/autostart';
 import App from './App';
 
 if (import.meta.env.PROD) {
@@ -16,6 +17,9 @@ if (import.meta.env.PROD) {
 
 initStore().then(async () => {
     await initEnv();
+    if (appWindow.label === 'config') {
+        await initAutoStart();
+    }
     const rootElement = document.getElementById('root');
     const root = ReactDOM.createRoot(rootElement);
     root.render(

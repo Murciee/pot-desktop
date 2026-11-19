@@ -1,11 +1,11 @@
 import { useCallback, useEffect } from 'react';
 import { listen, emit } from '@tauri-apps/api/event';
 import { useGetState } from './useGetState';
-import { store } from '../utils/store';
+import { getCachedConfig, store } from '../utils/store';
 import { debounce } from '../utils';
 
 export const useConfig = (key, defaultValue, options = {}) => {
-    const [property, setPropertyState, getProperty] = useGetState(null);
+    const [property, setPropertyState, getProperty] = useGetState(getCachedConfig(key));
     const { sync = true } = options;
 
     // 同步到Store (State -> Store)

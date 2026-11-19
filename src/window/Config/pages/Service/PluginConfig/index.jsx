@@ -63,7 +63,7 @@ function PluginModelField({ value, config, onChange }) {
     };
 
     return (
-        <div className='w-full'>
+        <div className='w-[320px] max-w-full'>
             <Input
                 value={value}
                 variant='bordered'
@@ -76,7 +76,7 @@ function PluginModelField({ value, config, onChange }) {
                         <DropdownTrigger>
                             <Button
                                 variant='bordered'
-                                className='w-full'
+                                className='w-[320px] max-w-full'
                                 isDisabled={models.length === 0}
                             >
                                 {t('services.translate.openai.model_select')}
@@ -134,7 +134,7 @@ export function PluginConfig(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'w-full max-w-full',
+                            mainWrapper: 'w-[320px] max-w-full',
                         }}
                         onValueChange={(value) => {
                             setPluginConfig({
@@ -174,7 +174,7 @@ export function PluginConfig(props) {
                                         <Input
                                             value={`${pluginConfig.hasOwnProperty(x.key) ? pluginConfig[x.key] : ''}`}
                                             variant='bordered'
-                                            className='w-full'
+                                            className='w-[320px] max-w-full'
                                             onValueChange={(value) => {
                                                 setPluginConfig({
                                                     ...pluginConfig,
@@ -188,7 +188,7 @@ export function PluginConfig(props) {
                                         <DropdownTrigger>
                                             <Button
                                                 variant='bordered'
-                                                className='w-full'
+                                                className='w-[320px] max-w-full'
                                             >
                                                 {
                                                     x.options[
@@ -237,7 +237,7 @@ export function PluginConfig(props) {
                                     <Input
                                         value={`${pluginConfig.hasOwnProperty(x.key) ? pluginConfig[x.key] : ''}`}
                                         variant='bordered'
-                                        className='w-full'
+                                        className='w-[320px] max-w-full'
                                         onValueChange={(value) => {
                                             setPluginConfig({
                                                 ...pluginConfig,

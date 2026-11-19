@@ -503,7 +503,7 @@ export default function Translate() {
                         <div className='config-item items-start'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_ocr_service')}</h3>
                             {overlayOcrService !== null && (
-                                <div className='min-w-0 flex-1 max-w-[420px]'>
+                                <div className='w-[320px] max-w-full'>
                                     <Dropdown className='w-full'>
                                         <DropdownTrigger>
                                             <Button variant='bordered' className='w-full'>
@@ -532,7 +532,7 @@ export default function Translate() {
                             <div className='config-item'>
                                 <h3 className='my-auto mx-0'>{t('config.translate.overlay_model')}</h3>
                                 {overlayModel !== null && (
-                                    <div className='min-w-0 flex-1 max-w-[420px]'>
+                                    <div className='w-[320px] max-w-full'>
                                         <Input
                                             value={overlayModel}
                                             variant='bordered'
@@ -608,7 +608,7 @@ export default function Translate() {
                         <div className='config-item'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_target_language')}</h3>
                             {overlayTargetLanguage !== null && (
-                                <div className='min-w-0 flex-1 max-w-[420px]'>
+                                <div className='w-[320px] max-w-full'>
                                     <Dropdown className='w-full'>
                                         <DropdownTrigger>
                                             <Button variant='bordered' className='w-full'>
@@ -645,7 +645,7 @@ export default function Translate() {
                                     max={1}
                                     step={0.05}
                                     value={String(overlayOpacity)}
-                                    className='min-w-0 flex-1 max-w-[420px]'
+                                    className='w-[120px] max-w-full'
                                     onValueChange={(v) => {
                                         const value = parseFloat(v);
                                         if (Number.isNaN(value)) {
@@ -667,7 +667,7 @@ export default function Translate() {
                                     max={2}
                                     step={0.1}
                                     value={String(overlayFontScale)}
-                                    className='min-w-0 flex-1 max-w-[420px]'
+                                    className='w-[120px] max-w-full'
                                     onValueChange={(v) => {
                                         const value = parseFloat(v);
                                         if (Number.isNaN(value)) {
@@ -689,7 +689,7 @@ export default function Translate() {
                                     max={10}
                                     step={1}
                                     value={String(overlayConcurrency)}
-                                    className='min-w-0 flex-1 max-w-[420px]'
+                                    className='w-[120px] max-w-full'
                                     onValueChange={(v) => {
                                         const value = parseInt(v);
                                         if (Number.isNaN(value)) {
@@ -703,11 +703,11 @@ export default function Translate() {
                         </div>
                         <div className='config-item'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_refresh_hotkey')}</h3>
-                            <div className='flex min-w-0 max-w-[420px] flex-1 flex-wrap items-center justify-end gap-2'>
+                            <div className='flex w-[320px] max-w-full flex-wrap items-center gap-2'>
                                 <Input
                                     isReadOnly
                                     variant='bordered'
-                                    className='w-full min-w-0 flex-1 basis-[180px]'
+                                    className='w-full min-w-0'
                                     value={overlayRefreshHotkey || ''}
                                     placeholder={t('config.translate.overlay_hotkey_hint')}
                                 />

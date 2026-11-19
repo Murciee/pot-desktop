@@ -214,7 +214,7 @@ export function Config(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-full',
+                            mainWrapper: 'w-[320px] max-w-full',
                         }}
                         onValueChange={(value) => {
                             updateConfig({ [INSTANCE_NAME_CONFIG_KEY]: value });
@@ -291,7 +291,7 @@ export function Config(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-full',
+                            mainWrapper: 'w-[320px] max-w-full',
                         }}
                         onValueChange={(value) => {
                             invalidateModels({ requestPath: value });
@@ -308,7 +308,7 @@ export function Config(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-full',
+                            mainWrapper: 'w-[320px] max-w-full',
                         }}
                         endContent={
                             <Button
@@ -330,7 +330,7 @@ export function Config(props) {
                 </div>
                 <div className={`config-item ${openaiConfig.service === 'azure' && 'hidden'}`}>
                     <h3 className='my-auto'>{t('services.translate.openai.model')}</h3>
-                    <div className='w-[50%]'>
+                    <div className='w-[320px] max-w-full'>
                         <Input
                             aria-label={t('services.translate.openai.model')}
                             value={openaiConfig['model']}

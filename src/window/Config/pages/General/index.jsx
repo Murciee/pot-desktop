@@ -20,11 +20,12 @@ import { useConfig } from '../../../../hooks/useConfig';
 import { LanguageFlag } from '../../../../utils/language';
 import { useToastStyle } from '../../../../hooks';
 import { osType } from '../../../../utils/env';
+import { getCachedAutoStart } from '../../../../utils/autostart';
 
 let timer = null;
 
 export default function General() {
-    const [autoStart, setAutoStart] = useState(false);
+    const [autoStart, setAutoStart] = useState(getCachedAutoStart());
     const [fontList, setFontList] = useState(null);
     const [checkUpdate, setCheckUpdate] = useConfig('check_update', true);
     const [serverPort, setServerPort] = useConfig('server_port', 60828);
@@ -84,21 +85,23 @@ export default function General() {
                 <CardBody>
                     <div className='config-item'>
                         <h3>{t('config.general.auto_start')}</h3>
-                        <Switch
-                            isSelected={autoStart}
-                            onValueChange={(v) => {
-                                setAutoStart(v);
-                                if (v) {
-                                    enable().then(() => {
-                                        info('Auto start enabled');
-                                    });
-                                } else {
-                                    disable().then(() => {
-                                        info('Auto start disabled');
-                                    });
-                                }
-                            }}
-                        />
+                        {autoStart !== null && (
+                            <Switch
+                                isSelected={autoStart}
+                                onValueChange={(v) => {
+                                    setAutoStart(v);
+                                    if (v) {
+                                        enable().then(() => {
+                                            info('Auto start enabled');
+                                        });
+                                    } else {
+                                        disable().then(() => {
+                                            info('Auto start disabled');
+                                        });
+                                    }
+                                }}
+                            />
+                        )}
                     </div>
                     <div className='config-item'>
                         <h3>{t('config.general.check_update')}</h3>
@@ -141,7 +144,7 @@ export default function General() {
                                         setServerPort(parseInt(v));
                                     }
                                 }}
-                                className='max-w-[100px]'
+                                className='w-[120px] max-w-full'
                             />
                         )}
                     </div>
@@ -328,7 +331,7 @@ export default function General() {
                     </div>
                     <div className='config-item'>
                         <h3 className='my-auto'>{t('config.general.app_font')}</h3>
-                        {appFont !== null && fontList !== null && (
+                        {appFont !== null && (
                             <Dropdown>
                                 <DropdownTrigger>
                                     <Button
@@ -356,7 +359,7 @@ export default function General() {
                                     >
                                         {t('config.general.default_font')}
                                     </DropdownItem>
-                                    {fontList.map((x) => {
+                                    {(fontList ?? []).map((x) => {
                                         return (
                                             <DropdownItem
                                                 style={{ fontFamily: x }}
@@ -372,7 +375,7 @@ export default function General() {
                     </div>
                     <div className='config-item'>
                         <h3 className='my-auto'>{t('config.general.app_fallback_font')}</h3>
-                        {appFallbackFont !== null && fontList !== null && (
+                        {appFallbackFont !== null && (
                             <Dropdown>
                                 <DropdownTrigger>
                                     <Button
@@ -402,7 +405,7 @@ export default function General() {
                                     >
                                         {t('config.general.default_font')}
                                     </DropdownItem>
-                                    {fontList.map((x) => {
+                                    {(fontList ?? []).map((x) => {
                                         return (
                                             <DropdownItem
                                                 style={{ fontFamily: x }}
@@ -523,7 +526,7 @@ export default function General() {
                         )}
                     </div>
                     <div className='config-item'>
-                        <div className='flex w-full min-w-0 gap-2'>
+                        <div className='flex w-full min-w-0 justify-end gap-2'>
                             {proxyHost !== null && (
                                 <Input
                                     type='url'
@@ -535,7 +538,7 @@ export default function General() {
                                     onValueChange={(v) => {
                                         setProxyHost(v);
                                     }}
-                                    className='min-w-0 flex-[2]'
+                                    className='w-[202px] max-w-full'
                                 />
                             )}
                             {proxyPort !== null && (
@@ -554,13 +557,13 @@ export default function General() {
                                             setProxyPort(parseInt(v));
                                         }
                                     }}
-                                    className='min-w-0 flex-1'
+                                    className='w-[110px] max-w-full'
                                 />
                             )}
                         </div>
                     </div>
                     <div className='config-item'>
-                        <div className='flex w-full min-w-0 gap-2'>
+                        <div className='flex w-full min-w-0 justify-end gap-2'>
                             {proxyUsername !== null && (
                                 <Input
                                     type='text'
@@ -571,7 +574,7 @@ export default function General() {
                                     onValueChange={(v) => {
                                         setProxyUsername(v);
                                     }}
-                                    className='min-w-0 flex-1'
+                                    className='w-[156px] max-w-full'
                                 />
                             )}
                             {proxyPassword !== null && (
@@ -584,7 +587,7 @@ export default function General() {
                                     onValueChange={(v) => {
                                         setProxyPassword(v);
                                     }}
-                                    className='min-w-0 flex-1'
+                                    className='w-[156px] max-w-full'
                                 />
                             )}
                         </div>
@@ -598,7 +601,7 @@ export default function General() {
                                 onValueChange={(v) => {
                                     setNoProxy(v);
                                 }}
-                                className='w-full'
+                                className='w-[320px] max-w-full'
                             />
                         )}
                     </div>

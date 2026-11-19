@@ -50,7 +50,13 @@ fn http_handle(request: Request) {
 }
 
 fn handle_config(request: Request) {
-    config_window();
+    // Window creation must happen on Tauri's main thread. Calling it from the
+    // HTTP worker thread can deadlock while the event loop waits for the
+    // window, leaving the request and the settings window stuck.
+    if let Some(app) = crate::APP.get() {
+        let app = app.clone();
+        let _ = app.run_on_main_thread(|| config_window());
+    }
     response_ok(request);
 }
 

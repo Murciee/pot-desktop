@@ -523,67 +523,71 @@ export default function General() {
                         )}
                     </div>
                     <div className='config-item'>
-                        {proxyHost !== null && (
-                            <Input
-                                type='url'
-                                variant='bordered'
-                                isRequired
-                                label={t('config.general.proxy.host')}
-                                startContent={<span>http://</span>}
-                                value={proxyHost}
-                                onValueChange={(v) => {
-                                    setProxyHost(v);
-                                }}
-                                className='mr-2'
-                            />
-                        )}
-                        {proxyPort !== null && (
-                            <Input
-                                type='number'
-                                variant='bordered'
-                                isRequired
-                                label={t('config.general.proxy.port')}
-                                value={proxyPort}
-                                onValueChange={(v) => {
-                                    if (parseInt(v) > 65535) {
-                                        setProxyPort(65535);
-                                    } else if (parseInt(v) < 0) {
-                                        setProxyPort('');
-                                    } else {
-                                        setProxyPort(parseInt(v));
-                                    }
-                                }}
-                                className='ml-2'
-                            />
-                        )}
+                        <div className='flex w-full min-w-0 gap-2'>
+                            {proxyHost !== null && (
+                                <Input
+                                    type='url'
+                                    variant='bordered'
+                                    isRequired
+                                    label={t('config.general.proxy.host')}
+                                    startContent={<span>http://</span>}
+                                    value={proxyHost}
+                                    onValueChange={(v) => {
+                                        setProxyHost(v);
+                                    }}
+                                    className='min-w-0 flex-[2]'
+                                />
+                            )}
+                            {proxyPort !== null && (
+                                <Input
+                                    type='number'
+                                    variant='bordered'
+                                    isRequired
+                                    label={t('config.general.proxy.port')}
+                                    value={proxyPort}
+                                    onValueChange={(v) => {
+                                        if (parseInt(v) > 65535) {
+                                            setProxyPort(65535);
+                                        } else if (parseInt(v) < 0) {
+                                            setProxyPort('');
+                                        } else {
+                                            setProxyPort(parseInt(v));
+                                        }
+                                    }}
+                                    className='min-w-0 flex-1'
+                                />
+                            )}
+                        </div>
                     </div>
                     <div className='config-item'>
-                        {proxyUsername !== null && (
-                            <Input
-                                type='text'
-                                variant='bordered'
-                                isDisabled
-                                label={t('config.general.proxy.username')}
-                                value={proxyUsername}
-                                onValueChange={(v) => {
-                                    setProxyUsername(v);
-                                }}
-                                className='mr-2'
-                            />
-                        )}
-                        {proxyPassword !== null && (
-                            <Input
-                                type='password'
-                                variant='bordered'
-                                isDisabled
-                                label={t('config.general.proxy.password')}
-                                value={proxyPassword}
-                                onValueChange={(v) => {
-                                    setProxyPassword(v);
-                                }}
-                                className='ml-2'
-                            />
-                        )}
+                        <div className='flex w-full min-w-0 gap-2'>
+                            {proxyUsername !== null && (
+                                <Input
+                                    type='text'
+                                    variant='bordered'
+                                    isDisabled
+                                    label={t('config.general.proxy.username')}
+                                    value={proxyUsername}
+                                    onValueChange={(v) => {
+                                        setProxyUsername(v);
+                                    }}
+                                    className='min-w-0 flex-1'
+                                />
+                            )}
+                            {proxyPassword !== null && (
+                                <Input
+                                    type='password'
+                                    variant='bordered'
+                                    isDisabled
+                                    label={t('config.general.proxy.password')}
+                                    value={proxyPassword}
+                                    onValueChange={(v) => {
+                                        setProxyPassword(v);
+                                    }}
+                                    className='min-w-0 flex-1'
+                                />
+                            )}
+                        </div>
                     </div>
                     <div className='config-item'>
                         {noProxy !== null && (
@@ -594,6 +598,7 @@ export default function General() {
                                 onValueChange={(v) => {
                                     setNoProxy(v);
                                 }}
+                                className='w-full'
                             />
                         )}
                     </div>

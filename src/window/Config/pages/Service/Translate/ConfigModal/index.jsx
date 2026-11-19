@@ -24,7 +24,7 @@ export default function ConfigModal(props) {
             onOpenChange={onOpenChange}
             scrollBehavior='inside'
         >
-            <ModalContent className='max-h-[75vh]'>
+            <ModalContent className='max-h-[80vh] w-[92vw] max-w-[720px]'>
                 {(onClose) => (
                     <>
                         <ModalHeader>

@@ -1,3 +1,17 @@
+## 3.0.17 (2026-11-19)
+
+### New features:
+
+-   Add a "Disable thinking" option to OpenAI-compatible translation providers.
+
+### Bugs fixed:
+
+-   Align the network proxy host/port and username/password fields.
+-   Unify the widths of overlay translation controls and place hints under their fields.
+-   Let hotkey inputs fill the available row instead of leaving the right side empty.
+-   Load saved configuration before writing defaults, and remember the settings window size and position.
+-   Show full-width inputs in plugin/service configuration dialogs and enlarge the dialog.
+
 ## 3.0.16 (2026-11-19)
 
 ### Bugs fixed:

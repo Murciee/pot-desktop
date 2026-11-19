@@ -5,7 +5,7 @@ import { defaultRequestArguments, normalizeChatUrl } from './utils';
 export async function translate(text, from, to, options) {
     const { config, setResult, detect } = options;
 
-    let { service, requestPath, model, apiKey, stream, promptList, requestArguments } = config;
+    let { service, requestPath, model, apiKey, stream, promptList, requestArguments, disableThinking } = config;
 
     let apiUrl;
     if (service === 'openai') {
@@ -56,6 +56,11 @@ export async function translate(text, from, to, options) {
         stream: stream,
         messages: promptList,
     };
+    if (disableThinking) {
+        // Supported by OpenAI-compatible reasoning endpoints that accept a
+        // reasoning_effort field. Providers without it ignore the extra key.
+        body.reasoning_effort = 'none';
+    }
     if (service === 'openai') {
         body['model'] = model;
     }

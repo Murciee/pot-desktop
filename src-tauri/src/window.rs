@@ -119,14 +119,54 @@ fn build_window(label: &str, title: &str) -> (Window, bool) {
     }
 }
 
+fn save_config_window_geometry(window: &Window) {
+    let factor = window.scale_factor().unwrap_or(1.0);
+    if let Ok(size) = window.outer_size() {
+        let size = size.to_logical::<f64>(factor);
+        set("config_window_width", size.width.round() as i64);
+        set("config_window_height", size.height.round() as i64);
+    }
+    if let Ok(position) = window.outer_position() {
+        let position = position.to_logical::<f64>(factor);
+        set("config_window_x", position.x.round() as i64);
+        set("config_window_y", position.y.round() as i64);
+    }
+}
+
 pub fn config_window() {
-    let (window, _exists) = build_window("config", "Config");
+    let (window, exists) = build_window("config", "Config");
     window
         .set_min_size(Some(tauri::LogicalSize::new(800, 400)))
         .unwrap();
-    window.set_size(tauri::LogicalSize::new(800, 600)).unwrap();
 
-    window.center().unwrap();
+    if !exists {
+        let width = get("config_window_width")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(800) as f64;
+        let height = get("config_window_height")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(600) as f64;
+        window
+            .set_size(tauri::LogicalSize::new(width, height))
+            .unwrap();
+
+        match (
+            get("config_window_x").and_then(|v| v.as_i64()),
+            get("config_window_y").and_then(|v| v.as_i64()),
+        ) {
+            (Some(x), Some(y)) => {
+                let _ = window.set_position(tauri::LogicalPosition::new(x as f64, y as f64));
+            }
+            _ => {
+                let _ = window.center();
+            }
+        }
+
+        let window_for_save = window.clone();
+        let _ = window.listen("tauri://close-requested", move |_| {
+            save_config_window_geometry(&window_for_save);
+        });
+    }
 }
 
 fn translate_window() -> Window {

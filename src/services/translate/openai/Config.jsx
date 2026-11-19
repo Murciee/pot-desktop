@@ -44,6 +44,7 @@ export function Config(props) {
             model: 'gpt-3.5-turbo',
             apiKey: '',
             stream: false,
+            disableThinking: false,
             promptList: defaultPromptList,
             requestArguments: defaultRequestArguments,
             modelList: [],
@@ -66,6 +67,9 @@ export function Config(props) {
             }
             if (openaiConfig.requestArguments === undefined) {
                 patch.requestArguments = defaultRequestArguments;
+            }
+            if (openaiConfig.disableThinking === undefined) {
+                patch.disableThinking = false;
             }
             if (openaiConfig.modelList === undefined) {
                 patch.modelList = [];
@@ -210,7 +214,7 @@ export function Config(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-[50%]',
+                            mainWrapper: 'max-w-full',
                         }}
                         onValueChange={(value) => {
                             updateConfig({ [INSTANCE_NAME_CONFIG_KEY]: value });
@@ -287,7 +291,7 @@ export function Config(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-[50%]',
+                            mainWrapper: 'max-w-full',
                         }}
                         onValueChange={(value) => {
                             invalidateModels({ requestPath: value });
@@ -304,7 +308,7 @@ export function Config(props) {
                         classNames={{
                             base: 'justify-between',
                             label: 'text-[length:--nextui-font-size-medium]',
-                            mainWrapper: 'max-w-[50%]',
+                            mainWrapper: 'max-w-full',
                         }}
                         endContent={
                             <Button
@@ -433,6 +437,22 @@ export function Config(props) {
                                 {t('services.translate.openai.stream')}
                             </Switch>
                         </div>
+                        <div className='config-item'>
+                            <Switch
+                                isSelected={openaiConfig['disableThinking'] ?? false}
+                                onValueChange={(value) => {
+                                    updateConfig({ disableThinking: value });
+                                }}
+                                classNames={{
+                                    base: 'flex flex-row-reverse justify-between w-full max-w-full',
+                                }}
+                            >
+                                {t('services.translate.openai.disable_thinking')}
+                            </Switch>
+                        </div>
+                        <p className='text-[10px] text-default-500'>
+                            {t('services.translate.openai.disable_thinking_hint')}
+                        </p>
                         <div className='config-item'>
                             <h3 className='my-auto'>Prompt List</h3>
                             <Button

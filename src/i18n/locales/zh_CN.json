@@ -326,6 +326,8 @@
                     "api_key_required": "请先填写 API Key",
                     "test_connection": "测试连接",
                     "test_success": "{{ms}} ms · {{text}}",
+                    "disable_thinking": "关闭思考",
+                    "disable_thinking_hint": "对支持 reasoning_effort 的 OpenAI 兼容渠道发送 reasoning_effort: none；若渠道报参数错误请关闭此选项。",
                     "advanced": "高级",
                     "hide_advanced": "收起高级",
                     "invalid_json": "JSON 格式不正确",

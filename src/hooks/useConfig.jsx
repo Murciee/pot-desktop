@@ -15,7 +15,7 @@ export const useConfig = (key, defaultValue, options = {}) => {
             store.save();
             let eventKey = key.replaceAll('.', '_').replaceAll('@', ':');
             emit(`${eventKey}_changed`, v);
-        }),
+        }, 150),
         []
     );
 

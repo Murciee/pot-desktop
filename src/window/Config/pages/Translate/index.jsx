@@ -500,37 +500,39 @@ export default function Translate() {
                                 </Dropdown>
                             )}
                         </div>
-                        <div className='config-item'>
+                        <div className='config-item items-start'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_ocr_service')}</h3>
                             {overlayOcrService !== null && (
-                                <Dropdown>
-                                    <DropdownTrigger>
-                                        <Button variant='bordered' className='w-full max-w-[320px]'>
-                                            {instanceNames[effectiveOverlayOcrService] || effectiveOverlayOcrService}
-                                        </Button>
-                                    </DropdownTrigger>
-                                    <DropdownMenu
-                                        aria-label='overlay OCR service'
-                                        className='max-h-[50vh] overflow-y-auto'
-                                        onAction={(key) => setOverlayOcrService(String(key))}
-                                    >
-                                        {overlayOcrOptions.map((instanceKey) => (
-                                            <DropdownItem key={instanceKey}>
-                                                {instanceNames[instanceKey] || getServiceName(instanceKey)}
-                                            </DropdownItem>
-                                        ))}
-                                    </DropdownMenu>
-                                </Dropdown>
+                                <div className='min-w-0 flex-1 max-w-[420px]'>
+                                    <Dropdown className='w-full'>
+                                        <DropdownTrigger>
+                                            <Button variant='bordered' className='w-full'>
+                                                {instanceNames[effectiveOverlayOcrService] || effectiveOverlayOcrService}
+                                            </Button>
+                                        </DropdownTrigger>
+                                        <DropdownMenu
+                                            aria-label='overlay OCR service'
+                                            className='max-h-[50vh] overflow-y-auto'
+                                            onAction={(key) => setOverlayOcrService(String(key))}
+                                        >
+                                            {overlayOcrOptions.map((instanceKey) => (
+                                                <DropdownItem key={instanceKey}>
+                                                    {instanceNames[instanceKey] || getServiceName(instanceKey)}
+                                                </DropdownItem>
+                                            ))}
+                                        </DropdownMenu>
+                                    </Dropdown>
+                                    <p className='mt-1 text-[11px] text-default-500'>
+                                        {t('config.translate.overlay_ocr_service_hint')}
+                                    </p>
+                                </div>
                             )}
                         </div>
-                        <p className='mb-2 text-[11px] text-default-500'>
-                            {t('config.translate.overlay_ocr_service_hint')}
-                        </p>
                         {overlayModelVisible && (
                             <div className='config-item'>
                                 <h3 className='my-auto mx-0'>{t('config.translate.overlay_model')}</h3>
                                 {overlayModel !== null && (
-                                    <div className='w-[50%]'>
+                                    <div className='min-w-0 flex-1 max-w-[420px]'>
                                         <Input
                                             value={overlayModel}
                                             variant='bordered'
@@ -593,42 +595,44 @@ export default function Translate() {
                                                 {t('config.translate.overlay_model_fetch')}
                                             </Button>
                                         </div>
+                                        <p className='text-[11px] text-default-500'>
+                                            {t('config.translate.overlay_model_hint')}
+                                        </p>
+                                        {overlayModelError !== '' && (
+                                            <p className='text-[11px] text-red-500'>{overlayModelError}</p>
+                                        )}
                                     </div>
-                                )}
-                                <p className='text-[11px] text-default-500'>
-                                    {t('config.translate.overlay_model_hint')}
-                                </p>
-                                {overlayModelError !== '' && (
-                                    <p className='text-[11px] text-red-500'>{overlayModelError}</p>
                                 )}
                             </div>
                         )}
                         <div className='config-item'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_target_language')}</h3>
                             {overlayTargetLanguage !== null && (
-                                <Dropdown>
-                                    <DropdownTrigger>
-                                        <Button variant='bordered'>
-                                            {overlayTargetLanguage === ''
-                                                ? t('config.translate.overlay_target_follow')
-                                                : t(`languages.${overlayTargetLanguage}`)}
-                                        </Button>
-                                    </DropdownTrigger>
-                                    <DropdownMenu
-                                        aria-label='overlay target language'
-                                        className='max-h-[50vh] overflow-y-auto'
-                                        onAction={(key) => {
-                                            setOverlayTargetLanguage(key === 'follow' ? '' : key);
-                                        }}
-                                    >
-                                        <DropdownItem key='follow'>
-                                            {t('config.translate.overlay_target_follow')}
-                                        </DropdownItem>
-                                        {languageList.map((item) => (
-                                            <DropdownItem key={item}>{t(`languages.${item}`)}</DropdownItem>
-                                        ))}
-                                    </DropdownMenu>
-                                </Dropdown>
+                                <div className='min-w-0 flex-1 max-w-[420px]'>
+                                    <Dropdown className='w-full'>
+                                        <DropdownTrigger>
+                                            <Button variant='bordered' className='w-full'>
+                                                {overlayTargetLanguage === ''
+                                                    ? t('config.translate.overlay_target_follow')
+                                                    : t(`languages.${overlayTargetLanguage}`)}
+                                            </Button>
+                                        </DropdownTrigger>
+                                        <DropdownMenu
+                                            aria-label='overlay target language'
+                                            className='max-h-[50vh] overflow-y-auto'
+                                            onAction={(key) => {
+                                                setOverlayTargetLanguage(key === 'follow' ? '' : key);
+                                            }}
+                                        >
+                                            <DropdownItem key='follow'>
+                                                {t('config.translate.overlay_target_follow')}
+                                            </DropdownItem>
+                                            {languageList.map((item) => (
+                                                <DropdownItem key={item}>{t(`languages.${item}`)}</DropdownItem>
+                                            ))}
+                                        </DropdownMenu>
+                                    </Dropdown>
+                                </div>
                             )}
                         </div>
                         <div className='config-item'>
@@ -641,7 +645,7 @@ export default function Translate() {
                                     max={1}
                                     step={0.05}
                                     value={String(overlayOpacity)}
-                                    className='w-full max-w-[120px]'
+                                    className='min-w-0 flex-1 max-w-[420px]'
                                     onValueChange={(v) => {
                                         const value = parseFloat(v);
                                         if (Number.isNaN(value)) {
@@ -663,7 +667,7 @@ export default function Translate() {
                                     max={2}
                                     step={0.1}
                                     value={String(overlayFontScale)}
-                                    className='w-full max-w-[120px]'
+                                    className='min-w-0 flex-1 max-w-[420px]'
                                     onValueChange={(v) => {
                                         const value = parseFloat(v);
                                         if (Number.isNaN(value)) {
@@ -685,7 +689,7 @@ export default function Translate() {
                                     max={10}
                                     step={1}
                                     value={String(overlayConcurrency)}
-                                    className='w-full max-w-[120px]'
+                                    className='min-w-0 flex-1 max-w-[420px]'
                                     onValueChange={(v) => {
                                         const value = parseInt(v);
                                         if (Number.isNaN(value)) {
@@ -699,11 +703,11 @@ export default function Translate() {
                         </div>
                         <div className='config-item'>
                             <h3 className='my-auto mx-0'>{t('config.translate.overlay_refresh_hotkey')}</h3>
-                            <div className='flex w-full min-w-0 max-w-[520px] flex-wrap items-center justify-end gap-2'>
+                            <div className='flex min-w-0 max-w-[420px] flex-1 flex-wrap items-center justify-end gap-2'>
                                 <Input
                                     isReadOnly
                                     variant='bordered'
-                                    className='w-full min-w-0 max-w-[420px] flex-1 basis-[180px]'
+                                    className='w-full min-w-0 flex-1 basis-[180px]'
                                     value={overlayRefreshHotkey || ''}
                                     placeholder={t('config.translate.overlay_hotkey_hint')}
                                 />

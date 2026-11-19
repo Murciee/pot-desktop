@@ -326,6 +326,8 @@
                     "api_key_required": "Please enter an API key first",
                     "test_connection": "Test Connection",
                     "test_success": "{{ms}} ms · {{text}}",
+                    "disable_thinking": "Disable thinking",
+                    "disable_thinking_hint": "Sends reasoning_effort: none for OpenAI-compatible reasoning models. Leave off if your provider rejects it.",
                     "advanced": "Advanced",
                     "hide_advanced": "Hide Advanced",
                     "invalid_json": "Invalid JSON",

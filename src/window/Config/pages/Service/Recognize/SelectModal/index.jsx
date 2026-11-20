@@ -6,6 +6,26 @@ import { createServiceInstanceKey } from '../../../../../../utils/service_instan
 import * as builtinServices from '../../../../../../services/recognize';
 import { osType } from '../../../../../../utils/env';
 
+// OpenAI-compatible endpoints are the most used entry, keep it on top.
+const PREFERRED_ORDER = ['openai_ocr'];
+
+function sortServices(keys) {
+    return [...keys].sort((a, b) => {
+        const ia = PREFERRED_ORDER.indexOf(a);
+        const ib = PREFERRED_ORDER.indexOf(b);
+        if (ia === -1 && ib === -1) {
+            return 0;
+        }
+        if (ia === -1) {
+            return 1;
+        }
+        if (ib === -1) {
+            return -1;
+        }
+        return ia - ib;
+    });
+}
+
 export default function SelectModal(props) {
     const { isOpen, onOpenChange, setCurrentConfigKey, onConfigOpen } = props;
     const { t } = useTranslation();
@@ -21,7 +41,7 @@ export default function SelectModal(props) {
                     <>
                         <ModalHeader>{t('config.service.add_service')}</ModalHeader>
                         <ModalBody>
-                            {Object.keys(builtinServices).map((x) => {
+                            {sortServices(Object.keys(builtinServices)).map((x) => {
                                 return (
                                     <div key={x}>
                                         <Button

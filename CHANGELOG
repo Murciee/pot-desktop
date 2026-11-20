@@ -1,3 +1,13 @@
+## 3.0.19 (2026-11-20)
+
+### New features:
+
+-   Add an OpenAI-compatible recognition service with address presets, model fetching and a disable-thinking option.
+
+### Improvements:
+
+-   List the OpenAI-compatible service first when adding a translation or recognition service.
+
 ## 3.0.18 (2026-11-19)
 
 ### Bugs fixed:

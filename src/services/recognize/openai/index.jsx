@@ -1,5 +1,7 @@
 import { fetch } from '@tauri-apps/api/http';
 
+import { normalizeChatUrl } from '../../translate/openai/utils';
+
 const DEFAULT_PROMPT = 'Just recognize the text in the image. Do not offer unnecessary explanations.';
 
 function normalizePath(path) {
@@ -11,7 +13,7 @@ function normalizePath(path) {
 }
 
 function isGoogleApi(path) {
-    return path.includes('generativelanguage.googleapis.com');
+    return path.includes('generativelanguage.googleapis.com') && !/\/openai(\/|$)/.test(path);
 }
 
 function readContent(choice) {
@@ -72,7 +74,7 @@ export async function recognize(base64, language, options = {}) {
         return text.trim();
     }
 
-    const url = path.endsWith('/chat/completions') ? path : `${path}/v1/chat/completions`;
+    const url = normalizeChatUrl(path);
 
     const body = {
         model,

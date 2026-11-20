@@ -467,7 +467,17 @@
                     "api_key": "API Key",
                     "custom_prompt": "Custom Prompt",
                     "custom_prompt_placeholder": "$lang is replaced with the recognition language",
-                    "disable_thinking": "Disable thinking"
+                    "disable_thinking": "Disable thinking",
+                    "preset": "Preset",
+                    "preset_custom": "Custom",
+                    "model_select": "Select model",
+                    "fetch_models": "Fetch models",
+                    "non_chat_model": "Not a chat model",
+                    "api_key_required": "Fill in the API Key first",
+                    "models_http_error": "Failed to fetch models: HTTP {{status}}",
+                    "models_empty": "The endpoint returned no models",
+                    "models_fetched": "Fetched {{count}} models",
+                    "models_failed": "Failed to fetch models: "
                 },
                 "simple_latex_ocr": {
                     "title": "Simple LaTeX",

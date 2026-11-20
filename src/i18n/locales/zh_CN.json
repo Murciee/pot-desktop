@@ -467,7 +467,17 @@
                     "api_key": "API Key",
                     "custom_prompt": "自定义 Prompt",
                     "custom_prompt_placeholder": "$lang 会替换为识别语言",
-                    "disable_thinking": "关闭思考"
+                    "disable_thinking": "关闭思考",
+                    "preset": "常用地址",
+                    "preset_custom": "自定义",
+                    "model_select": "选择模型",
+                    "fetch_models": "拉取模型",
+                    "non_chat_model": "非对话模型",
+                    "api_key_required": "请先填写 API Key",
+                    "models_http_error": "拉取模型失败：HTTP {{status}}",
+                    "models_empty": "接口没有返回模型",
+                    "models_fetched": "已获取 {{count}} 个模型",
+                    "models_failed": "拉取模型失败："
                 },
                 "simple_latex_ocr": {
                     "title": "Simple LaTeX",

@@ -1,6 +1,7 @@
 import { VscChromeClose, VscChromeMinimize, VscChromeMaximize, VscChromeRestore } from 'react-icons/vsc';
 import React, { useEffect, useState } from 'react';
 import { appWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api';
 import { listen } from '@tauri-apps/api/event';
 import { Button } from '@nextui-org/react';
 
@@ -48,7 +49,16 @@ export default function WindowControl() {
                 isIconOnly
                 variant='light'
                 className={`w-[35px] h-[35px] rounded-none close-button ${osType === 'Linux' && 'rounded-tr-[10px]'}`}
-                onPress={() => appWindow.close()}
+                onPress={async () => {
+                    if (appWindow.label === 'config') {
+                        try {
+                            await invoke('save_config_window_geometry_now');
+                        } catch {
+                            // Closing still has to happen if the save fails.
+                        }
+                    }
+                    appWindow.close();
+                }}
             >
                 <VscChromeClose className='text-[16px]' />
             </Button>

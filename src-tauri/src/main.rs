@@ -33,6 +33,7 @@ use tauri_plugin_log::LogTarget;
 use tray::*;
 use updater::check_update;
 use window::config_window;
+use window::save_config_window_geometry_now;
 use window::get_overlay_state;
 use window::updater_window;
 
@@ -147,6 +148,7 @@ fn main() {
             unset_proxy,
             run_binary,
             open_devtools,
+            save_config_window_geometry_now,
             register_shortcut_by_frontend,
             update_tray,
             updater_window,

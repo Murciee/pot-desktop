@@ -133,6 +133,16 @@ fn save_config_window_geometry(window: &Window) {
     }
 }
 
+/// Save the settings window geometry right before the title bar closes it.
+#[tauri::command]
+pub fn save_config_window_geometry_now() {
+    if let Some(app) = APP.get() {
+        if let Some(window) = app.get_window("config") {
+            save_config_window_geometry(&window);
+        }
+    }
+}
+
 pub fn config_window() {
     let (window, exists) = build_window("config", "Config");
     info!("Config window built, exists: {}", exists);
@@ -141,6 +151,9 @@ pub fn config_window() {
         .unwrap();
 
     if !exists {
+        // Read the geometry written by the UI instead of a possibly stale
+        // in-memory copy of the config file.
+        crate::cmd::reload_store();
         let width = get("config_window_width_v2")
             .and_then(|v| v.as_i64())
             .unwrap_or(760)

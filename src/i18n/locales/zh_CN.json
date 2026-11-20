@@ -460,6 +460,15 @@
                     "apisecret": "API Secret",
                     "apikey": "API Key"
                 },
+                "openai_ocr": {
+                    "title": "OpenAI 兼容",
+                    "model": "模型",
+                    "request_path": "请求地址",
+                    "api_key": "API Key",
+                    "custom_prompt": "自定义 Prompt",
+                    "custom_prompt_placeholder": "$lang 会替换为识别语言",
+                    "disable_thinking": "关闭思考"
+                },
                 "simple_latex_ocr": {
                     "title": "Simple LaTeX",
                     "token": "Token"

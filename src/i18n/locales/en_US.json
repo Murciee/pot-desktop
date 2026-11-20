@@ -460,6 +460,15 @@
                     "apisecret": "API Secret",
                     "apikey": "API Key"
                 },
+                "openai_ocr": {
+                    "title": "OpenAI Compatible",
+                    "model": "Model",
+                    "request_path": "Request Path",
+                    "api_key": "API Key",
+                    "custom_prompt": "Custom Prompt",
+                    "custom_prompt_placeholder": "$lang is replaced with the recognition language",
+                    "disable_thinking": "Disable thinking"
+                },
                 "simple_latex_ocr": {
                     "title": "Simple LaTeX",
                     "token": "Token"

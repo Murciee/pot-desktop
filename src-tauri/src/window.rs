@@ -166,8 +166,10 @@ pub fn config_window() {
         }
 
         let window_for_save = window.clone();
-        let _ = window.listen("tauri://close-requested", move |_| {
-            save_config_window_geometry(&window_for_save);
+        window.on_window_event(move |event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                save_config_window_geometry(&window_for_save);
+            }
         });
         info!("Config window geometry listener attached");
         let _ = window.show();

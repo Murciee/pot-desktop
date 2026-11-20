@@ -8,6 +8,7 @@ import WindowControl from '../../components/WindowControl';
 import SideBar from './components/SideBar';
 import { osType } from '../../utils/env';
 import { useConfig } from '../../hooks';
+import { store } from '../../utils/store';
 import routes from './routes';
 import './style.css';
 
@@ -31,6 +32,46 @@ export default function Config() {
             contentRef.current.scrollTop = 0;
         }
     }, [location.pathname]);
+
+    // The title bar close button calls appWindow.close(), which does not reach
+    // the Rust CloseRequested handler, so keep the geometry saved on resize and
+    // move as well.
+    useEffect(() => {
+        if (appWindow.label !== 'config') {
+            return;
+        }
+        let timer = null;
+        const persist = async () => {
+            try {
+                const factor = await appWindow.scaleFactor();
+                const size = (await appWindow.outerSize()).toLogical(factor);
+                const position = (await appWindow.outerPosition()).toLogical(factor);
+                await store.set('config_window_width_v2', Math.round(size.width));
+                await store.set('config_window_height_v2', Math.round(size.height));
+                await store.set('config_window_x', Math.round(position.x));
+                await store.set('config_window_y', Math.round(position.y));
+                await store.save();
+            } catch {
+                // Ignore and keep the previous values.
+            }
+        };
+        const schedule = () => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+            timer = setTimeout(persist, 400);
+        };
+        const unlisten = [
+            appWindow.listen('tauri://resize', schedule),
+            appWindow.listen('tauri://move', schedule),
+        ];
+        return () => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+            unlisten.forEach((p) => p.then((f) => f()));
+        };
+    }, []);
 
     return (
         <div

@@ -1,3 +1,13 @@
+## 3.0.20 (2026-11-20)
+
+### New features:
+
+-   Add show/hide buttons for API keys in service configuration, including plugin fields.
+
+### Bugs fixed:
+
+-   Remember the settings window size and position across restarts, including the first open after launch.
+
 ## 3.0.19 (2026-11-20)
 
 ### New features:

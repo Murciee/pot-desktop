@@ -1,5 +1,6 @@
 import { INSTANCE_NAME_CONFIG_KEY } from '../../../utils/service_instance';
 import { Input, Switch, Button, Dropdown, DropdownTrigger, DropdownMenu, DropdownItem } from '@nextui-org/react';
+import { MdVisibility, MdVisibilityOff } from 'react-icons/md';
 import toast, { Toaster } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 import { fetch as httpFetch } from '@tauri-apps/api/http';
@@ -56,6 +57,7 @@ export function Config(props) {
     );
     const [isLoading, setIsLoading] = useState(false);
     const [fetchingModels, setFetchingModels] = useState(false);
+    const [showKey, setShowKey] = useState(false);
 
     const toastStyle = useToastStyle();
 
@@ -171,7 +173,34 @@ export function Config(props) {
                 </div>
                 <div className='config-item'>
                     <h3 className='my-auto'>{t('services.recognize.openai_ocr.api_key')}</h3>
-                    {textInput(config.apiKey, (value) => updateConfig({ apiKey: value }), { type: 'password' })}
+                    <Input
+                        variant='bordered'
+                        classNames={{ base: 'w-full', mainWrapper: 'w-full' }}
+                        type={showKey ? 'text' : 'password'}
+                        value={config.apiKey}
+                        onValueChange={(value) => updateConfig({ apiKey: value })}
+                        endContent={
+                            <Button
+                                isIconOnly
+                                size='sm'
+                                type='button'
+                                variant='light'
+                                aria-label={
+                                    showKey
+                                        ? t('services.translate.openai.hide_key')
+                                        : t('services.translate.openai.show_key')
+                                }
+                                title={
+                                    showKey
+                                        ? t('services.translate.openai.hide_key')
+                                        : t('services.translate.openai.show_key')
+                                }
+                                onPress={() => setShowKey((value) => !value)}
+                            >
+                                {showKey ? <MdVisibilityOff size={18} /> : <MdVisibility size={18} />}
+                            </Button>
+                        }
+                    />
                 </div>
                 <div className='config-item'>
                     <h3 className='my-auto'>{t('services.recognize.openai_ocr.model')}</h3>

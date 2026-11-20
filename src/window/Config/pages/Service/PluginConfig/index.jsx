@@ -7,11 +7,11 @@ import { Dropdown } from '@nextui-org/react';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/api/shell';
 import { fetch as httpFetch } from '@tauri-apps/api/http';
+import { MdVisibility, MdVisibilityOff } from 'react-icons/md';
 import React, { useState } from 'react';
 
 import { useConfig } from '../../../../../hooks';
 import { modelsUrlFrom } from '../../../../../services/translate/openai/utils';
-
 function firstValue(config, keys) {
     for (const key of keys) {
         if (typeof config[key] === 'string' && config[key] !== '') {
@@ -19,6 +19,37 @@ function firstValue(config, keys) {
         }
     }
     return '';
+}
+
+const SECRET_KEY = /(api[-_]?key|token|secret|password)/i;
+
+function SecretField({ value, onChange, className }) {
+    const { t } = useTranslation();
+    const [visible, setVisible] = useState(false);
+    return (
+        <Input
+            type={visible ? 'text' : 'password'}
+            value={value}
+            variant='bordered'
+            className={className}
+            onValueChange={onChange}
+            endContent={
+                <Button
+                    isIconOnly
+                    size='sm'
+                    type='button'
+                    variant='light'
+                    aria-label={
+                        visible ? t('services.translate.openai.hide_key') : t('services.translate.openai.show_key')
+                    }
+                    title={visible ? t('services.translate.openai.hide_key') : t('services.translate.openai.show_key')}
+                    onPress={() => setVisible((v) => !v)}
+                >
+                    {visible ? <MdVisibilityOff size={18} /> : <MdVisibility size={18} />}
+                </Button>
+            }
+        />
+    );
 }
 
 function PluginModelField({ value, config, onChange }) {
@@ -112,6 +143,30 @@ export function PluginConfig(props) {
     const [pluginConfig, setPluginConfig] = useConfig(instanceKey, {}, { sync: false });
     const { t } = useTranslation();
 
+    const renderTextInput = (x) => {
+        const value = `${pluginConfig.hasOwnProperty(x.key) ? pluginConfig[x.key] : ''}`;
+        const onChange = (value) => {
+            setPluginConfig({
+                ...pluginConfig,
+                [x.key]: value,
+            });
+        };
+        return SECRET_KEY.test(x.key) ? (
+            <SecretField
+                value={value}
+                onChange={onChange}
+                className='w-[320px] max-w-full'
+            />
+        ) : (
+            <Input
+                value={value}
+                variant='bordered'
+                className='w-[320px] max-w-full'
+                onValueChange={onChange}
+            />
+        );
+    };
+
     return (
         <>
             <div className={'config-item'}>
@@ -171,17 +226,7 @@ export function PluginConfig(props) {
                                             }}
                                         />
                                     ) : (
-                                        <Input
-                                            value={`${pluginConfig.hasOwnProperty(x.key) ? pluginConfig[x.key] : ''}`}
-                                            variant='bordered'
-                                            className='w-[320px] max-w-full'
-                                            onValueChange={(value) => {
-                                                setPluginConfig({
-                                                    ...pluginConfig,
-                                                    [x.key]: value,
-                                                });
-                                            }}
-                                        />
+                                        renderTextInput(x)
                                     ))}
                                 {x.type === 'select' && (
                                     <Dropdown>
@@ -234,17 +279,7 @@ export function PluginConfig(props) {
                                         }}
                                     />
                                 ) : (
-                                    <Input
-                                        value={`${pluginConfig.hasOwnProperty(x.key) ? pluginConfig[x.key] : ''}`}
-                                        variant='bordered'
-                                        className='w-[320px] max-w-full'
-                                        onValueChange={(value) => {
-                                            setPluginConfig({
-                                                ...pluginConfig,
-                                                [x.key]: value,
-                                            });
-                                        }}
-                                    />
+                                    renderTextInput(x)
                                 )}
                             </div>
                         ))

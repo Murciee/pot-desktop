@@ -1,3 +1,19 @@
+## 3.0.21 (2026-11-22)
+
+### New features:
+
+-   Overlay translation: copy the translation, the original text, or both, and switch between original and translated text.
+-   Overlay translation: pin the overlay so outside clicks no longer close it; a pin badge marks the locked pinned state.
+-   Overlay translation: show failures in an inline status bar with retry failed blocks, switch channel, copy error, retry OCR, reselect, and open settings.
+-   Overlay translation: remember the font size, and keep the channel chosen with "switch channel" for later retries and overlays.
+
+### Improvements:
+
+-   Place the overlay toolbar above or below the selection instead of over the first translated line; use an inset toolbar only when the selection fills the screen.
+-   Reload overlay service, model, and OCR settings before refresh or retry, and keep the overlay pinned while the settings window is open.
+-   Ignore outside clicks while the overlay is hidden for a refresh, and recover from failed show calls.
+-   Make the overlay status bar scrollable on narrow selections, keep the toolbar close button reachable, and let the OCR error card pass clicks through to the toolbar.
+
 ## 3.0.20 (2026-11-20)
 
 ### New features:

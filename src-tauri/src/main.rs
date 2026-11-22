@@ -33,8 +33,14 @@ use tauri_plugin_log::LogTarget;
 use tray::*;
 use updater::check_update;
 use window::config_window;
+use window::open_config_window;
+use window::restart_overlay_translate;
 use window::save_config_window_geometry_now;
 use window::get_overlay_state;
+use window::refresh_overlay_state;
+use window::set_overlay_busy;
+use window::set_overlay_pinned;
+use window::set_overlay_toolbar;
 use window::updater_window;
 
 // Global AppHandle
@@ -144,6 +150,12 @@ fn main() {
             system_ocr_boxes,
             get_overlay_state,
             show_overlay_error,
+            set_overlay_pinned,
+            set_overlay_busy,
+            set_overlay_toolbar,
+            refresh_overlay_state,
+            open_config_window,
+            restart_overlay_translate,
             set_proxy,
             unset_proxy,
             run_binary,

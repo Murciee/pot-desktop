@@ -529,6 +529,14 @@ pub fn updater_window() {
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct OverlayToolbarLayout {
+    pub placement: String,
+    pub offset_top: f64,
+    pub content_height: f64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OverlayState {
     pub left: u32,
     pub top: u32,
@@ -565,7 +573,18 @@ struct OverlayRectPayload {
 static OVERLAY_STATE: once_cell::sync::Lazy<std::sync::Mutex<Option<OverlayState>>> =
     once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
 
+static OVERLAY_TOOLBAR: once_cell::sync::Lazy<std::sync::Mutex<Option<OverlayToolbarLayout>>> =
+    once_cell::sync::Lazy::new(|| std::sync::Mutex::new(None));
+
 pub static OVERLAY_DIALOG_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Keep the overlay on screen when the user clicks outside it.
+static OVERLAY_PINNED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Temporarily ignore outside clicks while the overlay is hidden for a refresh.
+static OVERLAY_BUSY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(target_os = "windows")]
@@ -651,7 +670,10 @@ unsafe extern "system" fn overlay_mouse_hook(
     {
         let overlay_hwnd = OVERLAY_CLICK_HWND.load(std::sync::atomic::Ordering::SeqCst);
         let mouse = &*(l_param.0 as *const MSLLHOOKSTRUCT);
-        if point_outside_overlay(overlay_hwnd, &mouse.pt) {
+        if point_outside_overlay(overlay_hwnd, &mouse.pt)
+            && !OVERLAY_PINNED.load(std::sync::atomic::Ordering::SeqCst)
+            && !OVERLAY_BUSY.load(std::sync::atomic::Ordering::SeqCst)
+        {
             OVERLAY_CLOSE_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
         }
     }
@@ -674,6 +696,9 @@ fn spawn_overlay_click_watcher(window: &Window) {
     }
     OVERLAY_CLICK_HWND.store(overlay_hwnd, std::sync::atomic::Ordering::SeqCst);
     OVERLAY_CLOSE_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_PINNED.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    *OVERLAY_TOOLBAR.lock().unwrap() = None;
 
     std::thread::spawn(move || {
         let hook = unsafe {
@@ -728,6 +753,8 @@ fn spawn_overlay_click_watcher(window: &Window) {
                 };
 
                 if !dialog_open
+                    && !OVERLAY_PINNED.load(std::sync::atomic::Ordering::SeqCst)
+                    && !OVERLAY_BUSY.load(std::sync::atomic::Ordering::SeqCst)
                     && (button_was_pressed || (buttons_are_down && !buttons_were_down))
                 {
                     let mut cursor = POINT::default();
@@ -756,6 +783,9 @@ fn spawn_overlay_click_watcher(window: &Window) {
         }
         OVERLAY_CLICK_HWND.store(0, std::sync::atomic::Ordering::SeqCst);
         OVERLAY_CLOSE_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
+        OVERLAY_PINNED.store(false, std::sync::atomic::Ordering::SeqCst);
+        OVERLAY_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+        *OVERLAY_TOOLBAR.lock().unwrap() = None;
     });
 }
 static OVERLAY_LISTENER_ID: once_cell::sync::Lazy<
@@ -764,6 +794,9 @@ static OVERLAY_LISTENER_ID: once_cell::sync::Lazy<
 
 #[cfg(target_os = "windows")]
 pub fn overlay_translate() {
+    if OVERLAY_BUSY.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let app_handle = APP.get().unwrap();
 
     // Remove the listener left by the previous run.
@@ -822,6 +855,9 @@ pub fn overlay_translate() {}
 
 #[cfg(target_os = "windows")]
 pub fn overlay_hotkey() {
+    if OVERLAY_BUSY.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let app_handle = APP.get().unwrap();
     match app_handle.get_window("overlay") {
         Some(window) => {
@@ -837,6 +873,9 @@ pub fn overlay_hotkey() {}
 
 #[cfg(target_os = "windows")]
 pub fn overlay_refresh_hotkey() {
+    if OVERLAY_BUSY.load(std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let app_handle = APP.get().unwrap();
     if let Some(window) = app_handle.get_window("overlay") {
         let _ = window.emit("overlay_refresh", ());
@@ -845,6 +884,140 @@ pub fn overlay_refresh_hotkey() {
 
 #[cfg(not(target_os = "windows"))]
 pub fn overlay_refresh_hotkey() {}
+
+#[tauri::command]
+pub fn set_overlay_pinned(pinned: bool) {
+    OVERLAY_PINNED.store(pinned, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn set_overlay_busy(busy: bool) {
+    OVERLAY_BUSY.store(busy, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[tauri::command]
+pub fn set_overlay_toolbar(
+    window: Window,
+    visible: bool,
+) -> Result<OverlayToolbarLayout, String> {
+    let mut toolbar = OVERLAY_TOOLBAR.lock().unwrap();
+    let state = OVERLAY_STATE.lock().unwrap().clone();
+
+    if !visible {
+        let had_toolbar = toolbar.take().is_some();
+        let content_height = state
+            .as_ref()
+            .map(|s| s.height as f64 / if s.dpr > 0.0 { s.dpr } else { 1.0 })
+            .unwrap_or(0.0);
+        if had_toolbar {
+            if let Some(state) = state.as_ref() {
+                let _ = window.set_position(tauri::PhysicalPosition::new(state.screen_x, state.screen_y));
+                let _ = window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+            }
+        }
+        return Ok(OverlayToolbarLayout {
+            placement: "none".to_string(),
+            offset_top: 0.0,
+            content_height,
+        });
+    }
+
+    if let Some(layout) = toolbar.as_ref() {
+        return Ok(layout.clone());
+    }
+
+    let state = state.ok_or_else(|| "overlay state not found".to_string())?;
+    let dpr = if state.dpr > 0.0 { state.dpr } else { 1.0 };
+    let content_height = state.height as f64 / dpr;
+    let extra = (32.0 * dpr).round() as i32;
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "overlay monitor not found".to_string())?;
+    let monitor_position = *monitor.position();
+    let monitor_size = monitor.size();
+
+    let above = state.screen_y - extra >= monitor_position.y;
+    let below = state.screen_y + state.height as i32 + extra
+        <= monitor_position.y + monitor_size.height as i32;
+
+    let (layout, x, y, width, height) = if above {
+        (
+            OverlayToolbarLayout {
+                placement: "top".to_string(),
+                offset_top: 32.0,
+                content_height,
+            },
+            state.screen_x,
+            state.screen_y - extra,
+            state.width,
+            state.height + extra as u32,
+        )
+    } else if below {
+        (
+            OverlayToolbarLayout {
+                placement: "bottom".to_string(),
+                offset_top: 0.0,
+                content_height,
+            },
+            state.screen_x,
+            state.screen_y,
+            state.width,
+            state.height + extra as u32,
+        )
+    } else {
+        (
+            OverlayToolbarLayout {
+                placement: "inside".to_string(),
+                offset_top: 32.0,
+                content_height: (content_height - 32.0).max(1.0),
+            },
+            state.screen_x,
+            state.screen_y,
+            state.width,
+            state.height,
+        )
+    };
+
+    window
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(tauri::PhysicalSize::new(width, height))
+        .map_err(|e| e.to_string())?;
+    *toolbar = Some(layout.clone());
+    Ok(layout)
+}
+
+#[tauri::command]
+pub fn refresh_overlay_state() -> Result<OverlayState, String> {
+    let mut guard = OVERLAY_STATE.lock().unwrap();
+    let state = guard
+        .as_mut()
+        .ok_or_else(|| "overlay state not found".to_string())?;
+    state.service = overlay_service_instance();
+    state.model = overlay_model();
+    state.target_lang = overlay_target_language();
+    state.ocr_service = overlay_ocr_service();
+    state.ocr_lang = overlay_ocr_lang();
+    Ok(state.clone())
+}
+
+#[tauri::command]
+pub fn open_config_window() {
+    if let Some(app_handle) = APP.get() {
+        let app_handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(|| config_window());
+    }
+}
+
+#[tauri::command]
+pub fn restart_overlay_translate() {
+    if let Some(app_handle) = APP.get() {
+        let app_handle = app_handle.clone();
+        let _ = app_handle.run_on_main_thread(|| overlay_translate());
+    }
+}
 
 #[cfg(target_os = "windows")]
 fn close_overlay_window(app_handle: &tauri::AppHandle) {
@@ -857,6 +1030,9 @@ fn close_overlay_window(app_handle: &tauri::AppHandle) {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     }
+    OVERLAY_PINNED.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    *OVERLAY_TOOLBAR.lock().unwrap() = None;
 }
 
 #[cfg(target_os = "windows")]

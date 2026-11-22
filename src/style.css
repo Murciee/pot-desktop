@@ -30,3 +30,7 @@ body,
 *::-webkit-scrollbar-thumb:hover {
     background: #c0c1c550;
 }
+
+.overlay-toolbar::-webkit-scrollbar {
+    display: none;
+}

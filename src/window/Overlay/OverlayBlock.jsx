@@ -1,8 +1,10 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { computeBlockColors } from '../../utils/overlay_layout';
-
-const MIN_FONT_SIZE = 7;
-const MAX_SCALED_FONT_SIZE = 36;
+import {
+    computeBlockColors,
+    computeBlockMaxFontSize,
+    OVERLAY_MAX_SCALED_FONT_SIZE,
+    OVERLAY_MIN_FONT_SIZE,
+} from '../../utils/overlay_layout';
 
 export const OverlayBlock = React.memo(function OverlayBlock({
     block,
@@ -36,14 +38,23 @@ export const OverlayBlock = React.memo(function OverlayBlock({
     const blockHeight = Math.max(12, block.nh * contentHeight);
     const vertical = Boolean(block.vertical);
 
-    // Fit the 1.0x baseline size to the original OCR box; explicit fontScale
-    // then scales from that baseline so pressing +/- always moves the size.
-    const baseMaxSize = Math.max(
-        MIN_FONT_SIZE,
-        Math.min((vertical ? blockWidth : blockHeight) * 0.85, Number(baseFontSize) || 16)
-    );
+    // Fit the 1.0x baseline size to the original OCR line size; explicit
+    // fontScale then scales from that baseline so pressing +/- moves cleanly.
+    const lineSizePx =
+        Number.isFinite(block.nLineSize) && block.nLineSize > 0
+            ? block.nLineSize * (vertical ? contentWidth : contentHeight)
+            : null;
+    const baseMaxSize = computeBlockMaxFontSize({
+        blockWidth,
+        blockHeight,
+        vertical,
+        lineSizePx,
+        text: block.text,
+    });
+    const fitMaxSize =
+        showError || pending ? Math.min(baseMaxSize, Number(baseFontSize) || 16) : baseMaxSize;
 
-    const [baseFit, setBaseFit] = useState({ size: baseMaxSize, overflowing: false });
+    const [baseFit, setBaseFit] = useState({ size: fitMaxSize, overflowing: false });
 
     useLayoutEffect(() => {
         const element = ref.current;
@@ -59,15 +70,16 @@ export const OverlayBlock = React.memo(function OverlayBlock({
         element.style.height = `${blockHeight}px`;
         element.style.maxHeight = `${blockHeight}px`;
 
-        let lo = MIN_FONT_SIZE;
-        let hi = Math.max(MIN_FONT_SIZE, baseMaxSize);
-        let best = MIN_FONT_SIZE;
+        let lo = OVERLAY_MIN_FONT_SIZE;
+        let hi = Math.max(OVERLAY_MIN_FONT_SIZE, fitMaxSize);
+        let best = OVERLAY_MIN_FONT_SIZE;
 
-        element.style.fontSize = `${hi}px`;
+        const maxCandidate = Math.max(OVERLAY_MIN_FONT_SIZE, Math.floor(hi * 2) / 2);
+        element.style.fontSize = `${maxCandidate}px`;
         if (element.scrollHeight <= element.clientHeight + 1 && element.scrollWidth <= element.clientWidth + 1) {
-            best = hi;
+            best = maxCandidate;
         } else {
-            for (let i = 0; i < 6; i += 1) {
+            for (let i = 0; i < 10 && hi - lo > 0.25; i += 1) {
                 const mid = (lo + hi) / 2;
                 element.style.fontSize = `${mid}px`;
                 const fits =
@@ -80,12 +92,12 @@ export const OverlayBlock = React.memo(function OverlayBlock({
                     hi = mid;
                 }
             }
-            best = Math.max(MIN_FONT_SIZE, Math.round(best * 2) / 2);
+            best = Math.max(OVERLAY_MIN_FONT_SIZE, Math.floor(best * 2) / 2);
         }
 
         element.style.fontSize = `${best}px`;
         const overflowing =
-            best <= MIN_FONT_SIZE + 0.1 &&
+            best <= OVERLAY_MIN_FONT_SIZE + 0.1 &&
             (element.scrollHeight > element.clientHeight + 1 || element.scrollWidth > element.clientWidth + 1);
 
         element.style.overflow = prevOverflow;
@@ -96,11 +108,11 @@ export const OverlayBlock = React.memo(function OverlayBlock({
         setBaseFit((prev) =>
             prev.size === best && prev.overflowing === overflowing ? prev : { size: best, overflowing }
         );
-    }, [text, blockWidth, blockHeight, vertical, baseMaxSize, displayMode]);
+    }, [text, blockWidth, blockHeight, vertical, fitMaxSize, displayMode]);
 
     const displayFontSize = Math.max(
-        MIN_FONT_SIZE,
-        Math.min(MAX_SCALED_FONT_SIZE, Math.round(baseFit.size * fontScale * 2) / 2)
+        OVERLAY_MIN_FONT_SIZE,
+        Math.min(OVERLAY_MAX_SCALED_FONT_SIZE, Math.round(baseFit.size * fontScale * 2) / 2)
     );
     const expanded = fontScale > 1.01;
     const maxExpandedHeight = Math.max(blockHeight, contentTop + contentHeight - top - 4);
@@ -137,13 +149,16 @@ export const OverlayBlock = React.memo(function OverlayBlock({
                 maxHeight: expanded ? `${maxExpandedHeight}px` : `${blockHeight}px`,
                 zIndex: hovered && !locked ? 5 : 1,
                 boxSizing: 'border-box',
-                padding: '2px 4px',
+                padding: vertical ? '4px 1px' : '1px 4px',
                 background: palette.background,
-                border: showError ? '1px dashed rgba(220,38,38,0.9)' : palette.border,
+                border: 'none',
+                boxShadow: showError ? 'none' : `inset 0 0 0 1px ${palette.borderColor}`,
+                outline: showError ? '1px dashed rgba(220,38,38,0.9)' : 'none',
+                outlineOffset: '-1px',
                 borderRadius: 4,
                 color: showError ? '#dc2626' : pending ? palette.mutedColor : palette.color,
                 fontStyle: pending ? 'italic' : 'normal',
-                lineHeight: 1.15,
+                lineHeight: 1.12,
                 overflow: !locked && (expanded || baseFit.overflowing) ? 'auto' : 'hidden',
                 whiteSpace: 'pre-wrap',
                 overflowWrap: 'anywhere',

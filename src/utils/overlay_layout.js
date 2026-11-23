@@ -1,3 +1,7 @@
+export const OVERLAY_MIN_FONT_SIZE = 7;
+export const OVERLAY_MAX_AUTO_FONT_SIZE = 180;
+export const OVERLAY_MAX_SCALED_FONT_SIZE = 240;
+
 function isCJK(char) {
     return /[\u3000-\u9fff\uf900-\ufaff]/.test(char ?? '');
 }
@@ -63,6 +67,7 @@ export function mergeLineBoxes(lines) {
 
     for (const line of valid) {
         const lineText = line.text.trim();
+        const lineSize = line.vertical ? line.w : line.h;
         let target = null;
 
         if (!line.vertical) {
@@ -103,6 +108,7 @@ export function mergeLineBoxes(lines) {
             target.lastLineW = line.w;
             target.lastLineH = line.h;
             target.text = joinLineText(target.text, lineText);
+            target.lineSizes.push(lineSize);
             if (line.bgColor) {
                 target.bgSamples.push(line.bgColor);
             }
@@ -118,18 +124,21 @@ export function mergeLineBoxes(lines) {
                 lastLineH: line.h,
                 text: lineText,
                 vertical: line.vertical,
+                lineSizes: [lineSize],
                 bgSamples: line.bgColor ? [line.bgColor] : [],
             });
         }
     }
 
-    return blocks.map(({ x, y, w, h, text, vertical, bgSamples }) => ({
+    return blocks.map(({ x, y, w, h, text, vertical, lineSizes, bgSamples }) => ({
         x,
         y,
         w,
         h,
         text,
         vertical,
+        lineSize: median(lineSizes),
+        lineCount: lineSizes.length,
         bgColor: averageColors(bgSamples),
     }));
 }
@@ -146,16 +155,55 @@ export function normalizeBlocks(blocks, width, height, dpr) {
         return [];
     }
 
-    return blocks.map((block, index) => ({
-        id: index,
-        nx: block.x / factor / cssWidth,
-        ny: block.y / factor / cssHeight,
-        nw: block.w / factor / cssWidth,
-        nh: block.h / factor / cssHeight,
-        text: block.text,
-        vertical: Boolean(block.vertical),
-        bgColor: block.bgColor ?? null,
-    }));
+    return blocks.map((block, index) => {
+        const vertical = Boolean(block.vertical);
+        const axisSpan = vertical ? cssWidth : cssHeight;
+        const nLineSize =
+            Number.isFinite(block.lineSize) && block.lineSize > 0
+                ? block.lineSize / factor / axisSpan
+                : null;
+        const lineCount =
+            Number.isInteger(block.lineCount) && block.lineCount > 0 ? block.lineCount : null;
+
+        return {
+            id: index,
+            nx: block.x / factor / cssWidth,
+            ny: block.y / factor / cssHeight,
+            nw: block.w / factor / cssWidth,
+            nh: block.h / factor / cssHeight,
+            text: block.text,
+            vertical,
+            nLineSize,
+            lineCount,
+            bgColor: block.bgColor ?? null,
+        };
+    });
+}
+
+export function computeBlockMaxFontSize({
+    blockWidth,
+    blockHeight,
+    vertical = false,
+    lineSizePx = null,
+    text = '',
+}) {
+    const axisSize = Math.max(
+        OVERLAY_MIN_FONT_SIZE,
+        Number(vertical ? blockWidth : blockHeight) || OVERLAY_MIN_FONT_SIZE
+    );
+    let raw;
+    if (Number.isFinite(lineSizePx) && lineSizePx > 0) {
+        // Match the original OCR line thickness without letting shorter translations
+        // in merged multi-line paragraphs inflate beyond the original font size.
+        raw = Math.min(lineSizePx, axisSize);
+    } else {
+        const nonEmptyLines =
+            String(text ?? '')
+                .split(/\r?\n/)
+                .filter((line) => line.trim() !== '').length || 1;
+        raw = (axisSize / nonEmptyLines) * 0.85;
+    }
+    return Math.max(OVERLAY_MIN_FONT_SIZE, Math.min(OVERLAY_MAX_AUTO_FONT_SIZE, raw));
 }
 
 export function shouldSkipTranslation(text, targetLang) {
@@ -209,11 +257,13 @@ export function computeBlockColors(bgColor, themeMode, appResolvedTheme, opacity
         rgb = useDark ? [24, 24, 27] : [255, 255, 255];
     }
 
+    const borderColor = useDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.15)';
     return {
         background: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`,
         color: useDark ? '#f4f4f5' : '#111111',
         mutedColor: useDark ? '#a1a1aa' : '#52525b',
-        border: useDark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(0,0,0,0.15)',
+        border: `1px solid ${borderColor}`,
+        borderColor,
         isDark: useDark,
     };
 }

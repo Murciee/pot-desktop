@@ -3,11 +3,14 @@ import assert from 'node:assert/strict';
 
 import {
     computeBlockColors,
+    computeBlockMaxFontSize,
     formatBatchPrompt,
     isBatchFriendlyService,
     joinLineText,
     mergeLineBoxes,
     normalizeBlocks,
+    OVERLAY_MAX_AUTO_FONT_SIZE,
+    OVERLAY_MIN_FONT_SIZE,
     parseBatchTranslation,
     shouldSkipTranslation,
 } from '../src/utils/overlay_layout.js';
@@ -33,9 +36,15 @@ test('mergeLineBoxes merges paragraph lines but splits height-mismatched heading
 
     assert.equal(blocks.length, 3);
     assert.equal(blocks[0].text, 'Section Title');
+    assert.equal(blocks[0].lineSize, 36);
+    assert.equal(blocks[0].lineCount, 1);
     assert.equal(blocks[1].text, 'Left line one Left line two');
+    assert.equal(blocks[1].lineSize, 16);
+    assert.equal(blocks[1].lineCount, 2);
     assert.deepEqual(blocks[1].bgColor, [249, 249, 249]);
     assert.equal(blocks[2].text, 'Right line one');
+    assert.equal(blocks[2].lineSize, 16);
+    assert.equal(blocks[2].lineCount, 1);
     assert.deepEqual(blocks[2].bgColor, [30, 30, 30]);
 });
 
@@ -46,23 +55,68 @@ test('mergeLineBoxes keeps vertical lines separate and preserves vertical flag',
     ]);
     assert.equal(blocks.length, 2);
     assert.equal(blocks[0].vertical, true);
+    assert.equal(blocks[0].lineSize, 20);
+    assert.equal(blocks[0].lineCount, 1);
     assert.equal(blocks[1].vertical, true);
 });
 
 test('normalizeBlocks converts physical boxes to normalized ratios with orientation and color', () => {
     const normalized = normalizeBlocks(
-        [{ x: 40, y: 20, w: 200, h: 40, text: 'Hello', vertical: false, bgColor: [10, 20, 30] }],
+        [
+            { x: 40, y: 20, w: 200, h: 40, text: 'Hello', vertical: false, lineSize: 40, lineCount: 1, bgColor: [10, 20, 30] },
+            { x: 20, y: 20, w: 40, h: 120, text: '縦書', vertical: true, lineSize: 40, lineCount: 1, bgColor: [10, 20, 30] },
+            { x: 0, y: 0, w: 400, h: 200, text: 'Plain fallback', vertical: false, bgColor: null },
+        ],
         400,
         200,
         2
     );
-    assert.equal(normalized.length, 1);
+    assert.equal(normalized.length, 3);
     assert.equal(normalized[0].nx, 0.1);
     assert.equal(normalized[0].ny, 0.1);
     assert.equal(normalized[0].nw, 0.5);
     assert.equal(normalized[0].nh, 0.2);
     assert.equal(normalized[0].vertical, false);
+    assert.equal(normalized[0].nLineSize, 0.2);
+    assert.equal(normalized[0].lineCount, 1);
     assert.deepEqual(normalized[0].bgColor, [10, 20, 30]);
+
+    assert.equal(normalized[1].nLineSize, 0.1);
+    assert.equal(normalized[1].lineCount, 1);
+
+    assert.equal(normalized[2].nLineSize, null);
+    assert.equal(normalized[2].lineCount, null);
+});
+
+test('computeBlockMaxFontSize matches original OCR line size and falls back safely for plain text', () => {
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 320, blockHeight: 48, vertical: false, lineSizePx: 48 }),
+        48
+    );
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 500, blockHeight: 96, vertical: false, lineSizePx: 96 }),
+        96
+    );
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 260, blockHeight: 120, vertical: false, lineSizePx: 32 }),
+        32
+    );
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 42, blockHeight: 240, vertical: true, lineSizePx: 42 }),
+        42
+    );
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 300, blockHeight: 200, vertical: false, lineSizePx: null, text: 'Line 1\nLine 2' }),
+        85
+    );
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 1000, blockHeight: 400, vertical: false, lineSizePx: 320 }),
+        OVERLAY_MAX_AUTO_FONT_SIZE
+    );
+    assert.equal(
+        computeBlockMaxFontSize({ blockWidth: 40, blockHeight: 4, vertical: false, lineSizePx: 4 }),
+        OVERLAY_MIN_FONT_SIZE
+    );
 });
 
 test('shouldSkipTranslation skips non-lexical, URLs, and pure target CJK text without skipping English or mixed text', () => {

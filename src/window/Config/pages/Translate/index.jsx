@@ -664,7 +664,13 @@ export default function Translate() {
                                 <Dropdown>
                                     <DropdownTrigger>
                                         <Button variant='bordered'>
-                                            {t(config.translate.overlay_theme_)}
+                                            {t(
+                                                `config.translate.overlay_theme_${
+                                                    ['auto', 'light', 'dark'].includes(overlayTheme)
+                                                        ? overlayTheme
+                                                        : 'auto'
+                                                }`
+                                            )}
                                         </Button>
                                     </DropdownTrigger>
                                     <DropdownMenu

@@ -1,3 +1,11 @@
+## 3.0.24 (2026-11-23)
+
+### Bugs fixed:
+
+-   Fix settings reverting or disappearing after updates and restarts by unifying Rust and frontend access onto a single `tauri-plugin-store` instance instead of two competing stores.
+-   Keep built-in `openai_ocr` recognition services in `recognize_service_list` on startup instead of stripping them during service validation.
+-   Serialize and flush pending frontend config writes before closing windows or switching settings pages, and remove a redundant `store.load()` race on mount.
+
 ## 3.0.23 (2026-11-23)
 
 ### Bugs fixed:

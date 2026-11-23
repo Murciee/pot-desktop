@@ -1,3 +1,19 @@
+## 3.0.22 (2026-11-23)
+
+### New features:
+
+-   Overlay translation: automatically scale each block's font size to match the original OCR text size instead of capping at the default app font size, while keeping multi-line paragraphs proportional.
+-   Overlay translation: add adaptive light/dark theme from sampled screen background colors, vertical text orientation support, and batch translation for LLM/batch-friendly services.
+
+### Improvements:
+
+-   Use single-pass in-memory WinRT OCR for overlay recognition and reclaim border/padding space inside tight OCR text boxes for better readability.
+-   Add a unified centered loading indicator and expand overlay layout/OCR unit test coverage.
+
+### Bugs fixed:
+
+-   Fix Windows mouse hook lag/races, WebView2 reselect deadlock, font shrink-back on manual scaling, and overlay resize/drag geometry sync.
+
 ## 3.0.21 (2026-11-22)
 
 ### New features:

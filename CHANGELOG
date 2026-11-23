@@ -1,3 +1,13 @@
+## 3.0.23 (2026-11-23)
+
+### Bugs fixed:
+
+-   Fix `ReferenceError: config is not defined` when opening the Translate settings page caused by an unquoted overlay theme i18n key.
+
+### Improvements:
+
+-   Build and publish only the Windows x64 installer and updater bundle in the Windows release workflow.
+
 ## 3.0.22 (2026-11-23)
 
 ### New features:

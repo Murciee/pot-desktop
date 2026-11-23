@@ -121,16 +121,18 @@ fn build_window(label: &str, title: &str) -> (Window, bool) {
 
 fn save_config_window_geometry(window: &Window) {
     let factor = window.scale_factor().unwrap_or(1.0);
+    let mut entries: Vec<(&str, serde_json::Value)> = Vec::with_capacity(4);
     if let Ok(size) = window.outer_size() {
         let size = size.to_logical::<f64>(factor);
-        set("config_window_width_v2", size.width.round() as i64);
-        set("config_window_height_v2", size.height.round() as i64);
+        entries.push(("config_window_width_v2", serde_json::json!(size.width.round() as i64)));
+        entries.push(("config_window_height_v2", serde_json::json!(size.height.round() as i64)));
     }
     if let Ok(position) = window.outer_position() {
         let position = position.to_logical::<f64>(factor);
-        set("config_window_x", position.x.round() as i64);
-        set("config_window_y", position.y.round() as i64);
+        entries.push(("config_window_x", serde_json::json!(position.x.round() as i64)));
+        entries.push(("config_window_y", serde_json::json!(position.y.round() as i64)));
     }
+    crate::config::set_many(&entries);
 }
 
 /// Save the settings window geometry right before the title bar closes it.

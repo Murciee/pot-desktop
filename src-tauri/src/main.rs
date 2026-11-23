@@ -143,6 +143,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             reload_store,
+            get_config_path,
             get_text,
             cut_image,
             get_base64,

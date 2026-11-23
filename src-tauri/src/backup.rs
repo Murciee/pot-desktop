@@ -43,6 +43,7 @@ pub async fn webdav(
             let mut zip_file = std::fs::File::open(&zip_path)?;
             let mut zip = ZipArchive::new(&mut zip_file)?;
             zip.extract(config_dir_path)?;
+            crate::config::reload();
             Ok("".to_string())
         }
         "put" => {
@@ -165,6 +166,7 @@ pub async fn local(operate: &str, path: String) -> Result<String, Error> {
             let mut zip_file = std::fs::File::open(&path)?;
             let mut zip = ZipArchive::new(&mut zip_file)?;
             zip.extract(config_dir_path)?;
+            crate::config::reload();
             Ok("".to_string())
         }
         _ => {
@@ -198,6 +200,7 @@ pub async fn aliyun(operate: &str, path: String, url: String) -> Result<String, 
             let mut zip_file = std::fs::File::open(&zip_path)?;
             let mut zip = ZipArchive::new(&mut zip_file)?;
             zip.extract(config_dir_path)?;
+            crate::config::reload();
             Ok("".to_string())
         }
         _ => {

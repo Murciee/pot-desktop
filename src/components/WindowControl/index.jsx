@@ -6,6 +6,7 @@ import { listen } from '@tauri-apps/api/event';
 import { Button } from '@nextui-org/react';
 
 import { osType } from '../../utils/env';
+import { flushConfigSaves } from '../../utils/store';
 import './style.css';
 
 export default function WindowControl() {
@@ -50,6 +51,11 @@ export default function WindowControl() {
                 variant='light'
                 className={`w-[35px] h-[35px] rounded-none close-button ${osType === 'Linux' && 'rounded-tr-[10px]'}`}
                 onPress={async () => {
+                    try {
+                        await flushConfigSaves();
+                    } catch {
+                        // Closing still has to happen if flush fails.
+                    }
                     if (appWindow.label === 'config') {
                         try {
                             await invoke('save_config_window_geometry_now');

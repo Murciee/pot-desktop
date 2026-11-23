@@ -1,8 +1,14 @@
 import { useCallback, useEffect } from 'react';
 import { listen, emit } from '@tauri-apps/api/event';
 import { useGetState } from './useGetState';
-import { getCachedConfig, store } from '../utils/store';
-import { debounce } from '../utils';
+import {
+    deleteConfigKey,
+    flushConfigSaves,
+    getCachedConfig,
+    scheduleConfigSave,
+    setConfigValue,
+    store,
+} from '../utils/store';
 
 export const useConfig = (key, defaultValue, options = {}) => {
     const [property, setPropertyState, getProperty] = useGetState(getCachedConfig(key));
@@ -10,37 +16,43 @@ export const useConfig = (key, defaultValue, options = {}) => {
 
     // 同步到Store (State -> Store)
     const syncToStore = useCallback(
-        debounce((v) => {
-            store.set(key, v);
-            store.save();
-            let eventKey = key.replaceAll('.', '_').replaceAll('@', ':');
+        (v) => {
+            scheduleConfigSave(key, v, 150);
+            const eventKey = key.replaceAll('.', '_').replaceAll('@', ':');
             emit(`${eventKey}_changed`, v);
-        }, 150),
-        []
+        },
+        [key]
     );
 
     // 同步到State (Store -> State)
-    const syncToState = useCallback((v) => {
-        if (v !== null) {
-            setPropertyState(v);
-        } else {
-            store.get(key).then((v) => {
-                if (v === null) {
-                    setPropertyState(defaultValue);
-                    store.set(key, defaultValue);
-                    store.save();
-                } else {
-                    setPropertyState(v);
-                }
-            });
-        }
-    }, []);
+    const syncToState = useCallback(
+        (v) => {
+            if (v !== null) {
+                setPropertyState(v);
+            } else {
+                store.get(key).then((stored) => {
+                    if (stored === null) {
+                        setPropertyState(defaultValue);
+                        void setConfigValue(key, defaultValue);
+                    } else {
+                        setPropertyState(stored);
+                    }
+                });
+            }
+        },
+        [key]
+    );
 
-    const setProperty = useCallback((v, forceSync = false) => {
-        setPropertyState(v);
-        const isSync = forceSync || sync;
-        isSync && syncToStore(v);
-    }, []);
+    const setProperty = useCallback(
+        (v, forceSync = false) => {
+            setPropertyState(v);
+            const isSync = forceSync || sync;
+            if (isSync) {
+                syncToStore(v);
+            }
+        },
+        [sync, syncToStore]
+    );
 
     // 初始化
     useEffect(() => {
@@ -50,18 +62,16 @@ export const useConfig = (key, defaultValue, options = {}) => {
             syncToState(e.payload);
         });
         return () => {
+            void flushConfigSaves([key]);
             unlisten.then((f) => {
                 f();
             });
         };
-    }, []);
+    }, [key]);
 
     return [property, setProperty, getProperty];
 };
 
 export const deleteKey = (key) => {
-    if (store.has(key)) {
-        store.delete(key);
-        store.save();
-    }
+    void deleteConfigKey(key);
 };

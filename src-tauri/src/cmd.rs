@@ -1,12 +1,10 @@
 use crate::config::get;
-use crate::config::StoreWrapper;
 use crate::error::Error;
 use crate::StringWrapper;
 use crate::APP;
 use log::{error, info};
 use serde_json::{json, Value};
 use std::io::Read;
-use tauri::Manager;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -185,9 +183,7 @@ pub fn get_text(state: tauri::State<StringWrapper>) -> String {
 
 #[tauri::command]
 pub fn reload_store() {
-    let state = APP.get().unwrap().state::<StoreWrapper>();
-    let mut store = state.0.lock().unwrap();
-    store.load().unwrap();
+    crate::config::reload();
 }
 
 /// Crop `pot_screenshot.png` with the same padding rules used by the UI.

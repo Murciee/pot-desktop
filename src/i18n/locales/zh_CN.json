@@ -151,6 +151,10 @@
                 "overlay_target_language": "目标语言",
                 "overlay_target_follow": "跟随翻译设置",
                 "overlay_opacity": "背景不透明度",
+                "overlay_theme": "背景主题",
+                "overlay_theme_auto": "自动取色（跟随画面明暗）",
+                "overlay_theme_light": "浅色白底",
+                "overlay_theme_dark": "深色黑底",
                 "overlay_font_scale": "字号比例",
                 "overlay_concurrency": "最大并发",
                 "overlay_refresh_hotkey": "刷新快捷键",
@@ -574,7 +578,14 @@
             "recognizing": "识别中…",
             "show_original": "显示原文",
             "show_translation": "显示译文",
-            "unlock_hint": "按快捷键处理"
+            "unlock_hint": "按快捷键处理",
+            "unlock_hint_with_key": "按 {{hotkey}} 解锁操作",
+            "unlock_hint_no_key": "请先配置覆盖翻译快捷键以解锁操作",
+            "retry_block_hint": "点击重试此段落",
+            "theme_auto": "背景：自动取色",
+            "theme_light": "背景：浅色",
+            "theme_dark": "背景：深色",
+            "screenshot_hint": "拖拽框选区域 · 右键或 Esc 取消"
         },
         "translate": {
             "translate": "翻译",

@@ -41,6 +41,7 @@ use window::refresh_overlay_state;
 use window::set_overlay_busy;
 use window::set_overlay_pinned;
 use window::set_overlay_toolbar;
+use window::sync_overlay_geometry;
 use window::updater_window;
 
 // Global AppHandle
@@ -145,14 +146,16 @@ fn main() {
             get_text,
             cut_image,
             get_base64,
+            get_overlay_base64,
+            capture_overlay_region,
             copy_img,
             system_ocr,
             system_ocr_boxes,
             get_overlay_state,
-            show_overlay_error,
             set_overlay_pinned,
             set_overlay_busy,
             set_overlay_toolbar,
+            sync_overlay_geometry,
             refresh_overlay_state,
             open_config_window,
             restart_overlay_translate,

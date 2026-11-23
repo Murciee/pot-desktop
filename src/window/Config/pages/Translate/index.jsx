@@ -51,6 +51,7 @@ export default function Translate() {
     const [overlayOpacity, setOverlayOpacity] = useConfig('overlay_opacity', 0.85);
     const [overlayFontScale, setOverlayFontScale] = useConfig('overlay_font_scale', 1);
     const [overlayConcurrency, setOverlayConcurrency] = useConfig('overlay_max_concurrency', 3);
+    const [overlayTheme, setOverlayTheme] = useConfig('overlay_theme', 'auto');
     const [overlayRefreshHotkey] = useConfig('hotkey_overlay_refresh', '');
     const [instanceNames, setInstanceNames] = useState({});
     const [overlayServiceConfig, setOverlayServiceConfig] = useState(null);
@@ -655,6 +656,32 @@ export default function Translate() {
                                         }
                                     }}
                                 />
+                            )}
+                        </div>
+                        <div className='config-item'>
+                            <h3 className='my-auto mx-0'>{t('config.translate.overlay_theme')}</h3>
+                            {overlayTheme !== null && (
+                                <Dropdown>
+                                    <DropdownTrigger>
+                                        <Button variant='bordered'>
+                                            {t(config.translate.overlay_theme_)}
+                                        </Button>
+                                    </DropdownTrigger>
+                                    <DropdownMenu
+                                        aria-label='overlay theme'
+                                        onAction={(key) => setOverlayTheme(String(key))}
+                                    >
+                                        <DropdownItem key='auto'>
+                                            {t('config.translate.overlay_theme_auto')}
+                                        </DropdownItem>
+                                        <DropdownItem key='light'>
+                                            {t('config.translate.overlay_theme_light')}
+                                        </DropdownItem>
+                                        <DropdownItem key='dark'>
+                                            {t('config.translate.overlay_theme_dark')}
+                                        </DropdownItem>
+                                    </DropdownMenu>
+                                </Dropdown>
                             )}
                         </div>
                         <div className='config-item'>

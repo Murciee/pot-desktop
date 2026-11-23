@@ -143,36 +143,7 @@ export async function recognizeWithBoxes(lang) {
     }
 
     const language = windowsLangMap[lang] ?? 'auto';
-    if (language !== 'auto') {
-        return normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: language }));
-    }
-
-    // Windows' "auto" only uses the first installed user-profile language,
-    // which often picks an English engine for Chinese screenshots. Try the
-    // common OCR packs and keep the result with the most real characters.
-    const candidates = ['zh-CN', 'en-US', 'ja-JP', 'ko-KR'];
-    let best = null;
-    let bestScore = Number.NEGATIVE_INFINITY;
-    for (const candidate of candidates) {
-        try {
-            const boxes = normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: candidate }));
-            if (boxes.length === 0) {
-                continue;
-            }
-            const score = scoreOcrBoxes(boxes);
-            if (score > bestScore) {
-                best = boxes;
-                bestScore = score;
-            }
-        } catch {
-            // Language pack not installed; try the next one.
-        }
-    }
-    if (best !== null) {
-        return best;
-    }
-
-    return normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: 'auto' }));
+    return normalizeOcrBoxes(await invoke('system_ocr_boxes', { lang: language }));
 }
 
 export * from './Config';

@@ -48,6 +48,25 @@ export default function Screenshot() {
         void capture();
     }, [t]);
 
+    const imgRect = imgRef.current?.getBoundingClientRect();
+    const renderWidth = imgRect?.width || window.innerWidth;
+    const renderHeight = imgRect?.height || window.innerHeight;
+    const dpiX =
+        imgRef.current?.naturalWidth && renderWidth > 0
+            ? imgRef.current.naturalWidth / renderWidth
+            : window.devicePixelRatio || 1;
+    const dpiY =
+        imgRef.current?.naturalHeight && renderHeight > 0
+            ? imgRef.current.naturalHeight / renderHeight
+            : dpiX;
+
+    const selLeft = Math.min(mouseDownX, mouseMoveX);
+    const selTop = Math.min(mouseDownY, mouseMoveY);
+    const selRight = Math.max(mouseDownX, mouseMoveX);
+    const selBottom = Math.max(mouseDownY, mouseMoveY);
+    const selPhysWidth = Math.max(0, Math.round((selRight - selLeft) * dpiX));
+    const selPhysHeight = Math.max(0, Math.round((selBottom - selTop) * dpiY));
+
     return (
         <>
             <img
@@ -77,15 +96,47 @@ export default function Screenshot() {
             />
             {imageReady && (
                 <>
-                    <div
-                        className={`fixed bg-[#2080f020] border border-solid border-sky-500 ${!isMoved && 'hidden'}`}
-                        style={{
-                            top: Math.min(mouseDownY, mouseMoveY),
-                            left: Math.min(mouseDownX, mouseMoveX),
-                            bottom: screen.height - Math.max(mouseDownY, mouseMoveY),
-                            right: screen.width - Math.max(mouseDownX, mouseMoveX),
-                        }}
-                    />
+                    {!isMoved && (
+                        <>
+                            <div
+                                className='fixed inset-0 pointer-events-none'
+                                style={{ background: 'rgba(0, 0, 0, 0.35)' }}
+                            />
+                            <div
+                                className='fixed top-4 left-1/2 -translate-x-1/2 pointer-events-none select-none px-3 py-1.5 rounded-full text-xs text-white'
+                                style={{
+                                    background: 'rgba(24, 24, 27, 0.85)',
+                                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                                }}
+                            >
+                                {t('overlay.screenshot_hint')}
+                            </div>
+                        </>
+                    )}
+                    {isMoved && (
+                        <div
+                            className='fixed border border-solid border-sky-400 pointer-events-none'
+                            style={{
+                                top: selTop,
+                                left: selLeft,
+                                width: Math.max(0, selRight - selLeft),
+                                height: Math.max(0, selBottom - selTop),
+                                boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.35)',
+                            }}
+                        >
+                            {selPhysWidth > 0 && selPhysHeight > 0 && (
+                                <div
+                                    className='absolute left-0 px-1.5 py-0.5 rounded text-[11px] font-mono text-white whitespace-nowrap'
+                                    style={{
+                                        top: selTop >= 24 ? -22 : 4,
+                                        background: 'rgba(24, 24, 27, 0.88)',
+                                    }}
+                                >
+                                    {selPhysWidth} × {selPhysHeight}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div
                         className='fixed top-0 left-0 bottom-0 right-0 cursor-crosshair select-none'
                         onMouseDown={(e) => {
@@ -93,6 +144,8 @@ export default function Screenshot() {
                                 setIsDown(true);
                                 setMouseDownX(e.clientX);
                                 setMouseDownY(e.clientY);
+                                setMouseMoveX(e.clientX);
+                                setMouseMoveY(e.clientY);
                             } else {
                                 void appWindow.close();
                             }
@@ -110,12 +163,23 @@ export default function Screenshot() {
                             }
                             setIsDown(false);
                             setIsMoved(false);
+                            const rect = imgRef.current.getBoundingClientRect();
+                            const rw = rect.width || window.innerWidth;
+                            const rh = rect.height || window.innerHeight;
                             const imgWidth = imgRef.current.naturalWidth;
-                            const dpi = imgWidth / screen.width;
-                            const left = Math.floor(Math.min(mouseDownX, e.clientX) * dpi);
-                            const top = Math.floor(Math.min(mouseDownY, e.clientY) * dpi);
-                            const right = Math.floor(Math.max(mouseDownX, e.clientX) * dpi);
-                            const bottom = Math.floor(Math.max(mouseDownY, e.clientY) * dpi);
+                            const imgHeight = imgRef.current.naturalHeight;
+                            const dpi = rw > 0 ? imgWidth / rw : 1;
+                            const scaleY = rh > 0 ? imgHeight / rh : dpi;
+
+                            const leftCss = Math.min(mouseDownX, e.clientX) - rect.left;
+                            const topCss = Math.min(mouseDownY, e.clientY) - rect.top;
+                            const rightCss = Math.max(mouseDownX, e.clientX) - rect.left;
+                            const bottomCss = Math.max(mouseDownY, e.clientY) - rect.top;
+
+                            const left = Math.max(0, Math.floor(leftCss * dpi));
+                            const top = Math.max(0, Math.floor(topCss * scaleY));
+                            const right = Math.min(imgWidth, Math.floor(rightCss * dpi));
+                            const bottom = Math.min(imgHeight, Math.floor(bottomCss * scaleY));
                             const width = right - left;
                             const height = bottom - top;
                             if (width <= 0 || height <= 0) {

@@ -2,9 +2,12 @@ function isCJK(char) {
     return /[\u3000-\u9fff\uf900-\ufaff]/.test(char ?? '');
 }
 
-function joinLineText(left, right) {
-    if (left.endsWith('-')) {
+export function joinLineText(left, right) {
+    if (/(?:^|\s)[A-Za-z]{2,}-$/i.test(left) && /^[a-z]/.test(right)) {
         return left.slice(0, -1) + right;
+    }
+    if (/(?:^|\s)--[A-Za-z0-9-]+-$/.test(left) && /^[A-Za-z0-9]/.test(right)) {
+        return left + right;
     }
     if (isCJK(left.slice(-1)) || isCJK(right.slice(0, 1))) {
         return left + right;
@@ -21,35 +24,70 @@ export function median(values) {
     return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
+function averageColors(samples) {
+    if (!samples || samples.length === 0) {
+        return null;
+    }
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (const sample of samples) {
+        r += sample[0];
+        g += sample[1];
+        b += sample[2];
+    }
+    const count = samples.length;
+    return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
+}
+
 /**
  * Merge OCR line boxes that belong to the same paragraph.
- * Lines are sorted by y; a line joins the previous block when the vertical gap
- * is below 0.7 x median line height and the horizontal overlap is above 25%.
+ * Uses local line height ratio, orientation consistency, and last-line
+ * horizontal overlap so wide headings do not merge separate columns underneath.
  */
 export function mergeLineBoxes(lines) {
     const valid = (lines ?? [])
         .filter((line) => line && typeof line.text === 'string' && line.text.trim() !== '' && line.w > 0 && line.h > 0)
-        .map((line) => ({ ...line }))
+        .map((line) => ({
+            ...line,
+            vertical: Boolean(line.vertical),
+            bgColor: Array.isArray(line.bgColor) && line.bgColor.length === 3 ? line.bgColor : null,
+        }))
         .sort((a, b) => a.y - b.y || a.x - b.x);
 
     if (valid.length === 0) {
         return [];
     }
 
-    const medianHeight = median(valid.map((line) => line.h));
     const blocks = [];
 
     for (const line of valid) {
+        const lineText = line.text.trim();
         let target = null;
-        for (let i = blocks.length - 1; i >= 0; i -= 1) {
-            const block = blocks[i];
-            const gap = line.y - (block.y + block.h);
-            const overlap =
-                Math.min(block.x + block.w, line.x + line.w) - Math.max(block.x, line.x);
-            const minWidth = Math.min(block.w, line.w);
-            if (gap < medianHeight * 0.7 && minWidth > 0 && overlap / minWidth > 0.25) {
-                target = block;
-                break;
+
+        if (!line.vertical) {
+            for (let i = blocks.length - 1; i >= 0; i -= 1) {
+                const block = blocks[i];
+                if (block.vertical) {
+                    continue;
+                }
+                const minH = Math.max(1, Math.min(block.lastLineH, line.h));
+                const maxH = Math.max(block.lastLineH, line.h);
+                if (maxH / minH > 1.55) {
+                    continue;
+                }
+                const gap = line.y - (block.lastLineY + block.lastLineH);
+                if (gap < -minH * 0.35 || gap >= minH * 0.75) {
+                    continue;
+                }
+                const overlap =
+                    Math.min(block.lastLineX + block.lastLineW, line.x + line.w) -
+                    Math.max(block.lastLineX, line.x);
+                const minWidth = Math.min(block.lastLineW, line.w);
+                if (minWidth > 0 && overlap / minWidth > 0.25) {
+                    target = block;
+                    break;
+                }
             }
         }
 
@@ -60,19 +98,40 @@ export function mergeLineBoxes(lines) {
             target.y = Math.min(target.y, line.y);
             target.w = right - target.x;
             target.h = bottom - target.y;
-            target.text = joinLineText(target.text, line.text.trim());
+            target.lastLineX = line.x;
+            target.lastLineY = line.y;
+            target.lastLineW = line.w;
+            target.lastLineH = line.h;
+            target.text = joinLineText(target.text, lineText);
+            if (line.bgColor) {
+                target.bgSamples.push(line.bgColor);
+            }
         } else {
             blocks.push({
                 x: line.x,
                 y: line.y,
                 w: line.w,
                 h: line.h,
-                text: line.text.trim(),
+                lastLineX: line.x,
+                lastLineY: line.y,
+                lastLineW: line.w,
+                lastLineH: line.h,
+                text: lineText,
+                vertical: line.vertical,
+                bgSamples: line.bgColor ? [line.bgColor] : [],
             });
         }
     }
 
-    return blocks;
+    return blocks.map(({ x, y, w, h, text, vertical, bgSamples }) => ({
+        x,
+        y,
+        w,
+        h,
+        text,
+        vertical,
+        bgColor: averageColors(bgSamples),
+    }));
 }
 
 /**
@@ -94,5 +153,117 @@ export function normalizeBlocks(blocks, width, height, dpr) {
         nw: block.w / factor / cssWidth,
         nh: block.h / factor / cssHeight,
         text: block.text,
+        vertical: Boolean(block.vertical),
+        bgColor: block.bgColor ?? null,
     }));
+}
+
+export function shouldSkipTranslation(text, targetLang) {
+    const trimmed = String(text ?? '').trim();
+    if (!trimmed) {
+        return true;
+    }
+    if (!/\p{L}/u.test(trimmed)) {
+        return true;
+    }
+    if (/^https?:\/\/\S+$/i.test(trimmed)) {
+        return true;
+    }
+    const lang = String(targetLang ?? '').toLowerCase();
+    if (lang === 'zh_cn' || lang === 'zh_tw') {
+        const hasHan = /[\u4e00-\u9fff\u3400-\u4dbf]/.test(trimmed);
+        const hasForeignScript = /[A-Za-z]{2,}|[\u3040-\u30ff\uac00-\ud7af\u0400-\u04ff\u0600-\u06ff\u0e00-\u0e7f]/.test(
+            trimmed
+        );
+        if (hasHan && !hasForeignScript) {
+            return true;
+        }
+    } else if (lang === 'ko') {
+        const hasHangul = /[\uac00-\ud7af]/.test(trimmed);
+        const hasForeignScript = /[A-Za-z]{2,}|[\u4e00-\u9fff\u3040-\u30ff\u0400-\u04ff]/.test(trimmed);
+        if (hasHangul && !hasForeignScript) {
+            return true;
+        }
+    }
+    return false;
+}
+
+export function computeBlockColors(bgColor, themeMode, appResolvedTheme, opacity) {
+    const alpha = Math.min(1, Math.max(0.3, Number(opacity) || 0.85));
+    let useDark = false;
+    let rgb = null;
+
+    if (themeMode === 'dark') {
+        useDark = true;
+        rgb = [24, 24, 27];
+    } else if (themeMode === 'light') {
+        useDark = false;
+        rgb = [255, 255, 255];
+    } else if (Array.isArray(bgColor) && bgColor.length === 3) {
+        const [r, g, b] = bgColor.map((v) => Math.min(255, Math.max(0, Math.round(Number(v) || 0))));
+        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        useDark = luma <= 145;
+        rgb = [r, g, b];
+    } else {
+        useDark = appResolvedTheme === 'dark';
+        rgb = useDark ? [24, 24, 27] : [255, 255, 255];
+    }
+
+    return {
+        background: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`,
+        color: useDark ? '#f4f4f5' : '#111111',
+        mutedColor: useDark ? '#a1a1aa' : '#52525b',
+        border: useDark ? '1px solid rgba(255,255,255,0.22)' : '1px solid rgba(0,0,0,0.15)',
+        isDark: useDark,
+    };
+}
+
+const NON_BATCH_SERVICES = new Set(['ecdict', 'bing_dict', 'cambridge_dict']);
+
+export function isBatchFriendlyService(serviceName) {
+    return Boolean(serviceName) && !NON_BATCH_SERVICES.has(serviceName);
+}
+
+export function formatBatchPrompt(texts) {
+    return (texts ?? [])
+        .map((text, index) => `[[${index}]] ${String(text ?? '').trim()}`)
+        .join('\n');
+}
+
+export function parseBatchTranslation(rawText, expectedCount) {
+    if (expectedCount <= 0 || typeof rawText !== 'string') {
+        return null;
+    }
+    const pattern = /(?:^|\n)\s*\[\[(\d+)\]\]\s*/g;
+    const matches = [];
+    let match;
+    while ((match = pattern.exec(rawText)) !== null) {
+        matches.push({
+            index: Number(match[1]),
+            start: match.index,
+            contentStart: match.index + match[0].length,
+        });
+    }
+    if (matches.length !== expectedCount) {
+        return null;
+    }
+    const results = new Array(expectedCount);
+    const seen = new Set();
+    for (let i = 0; i < matches.length; i += 1) {
+        const current = matches[i];
+        if (!Number.isInteger(current.index) || current.index < 0 || current.index >= expectedCount) {
+            return null;
+        }
+        if (seen.has(current.index)) {
+            return null;
+        }
+        seen.add(current.index);
+        const end = i + 1 < matches.length ? matches[i + 1].start : rawText.length;
+        const segment = rawText.slice(current.contentStart, end).trim();
+        if (!segment) {
+            return null;
+        }
+        results[current.index] = segment;
+    }
+    return seen.size === expectedCount ? results : null;
 }

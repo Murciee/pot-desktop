@@ -40,7 +40,7 @@ export async function recognizeOverlay(serviceInstanceKey, language) {
         return { boxes: await recognizeWithBoxes(language) };
     }
 
-    const base64 = await invoke('get_base64');
+    const base64 = await invoke('get_overlay_base64');
     if (!base64) {
         throw new Error('Screenshot image not found');
     }
@@ -56,7 +56,10 @@ export async function recognizeOverlay(serviceInstanceKey, language) {
         if (!service?.recognize) {
             throw new Error(`Recognize service not available: ${serviceName}`);
         }
-        text = await service.recognize(base64, service.Language?.[language], { config });
+        text = await service.recognize(base64, service.Language?.[language], {
+            config,
+            imageFile: 'pot_overlay_cut.png',
+        });
     }
 
     return { text: String(text ?? '').trim() };

@@ -15,14 +15,167 @@ pub struct CropInfo {
     pub padding_top: u32,
 }
 
+fn cache_file_path(
+    app_handle: &tauri::AppHandle,
+    filename: &str,
+) -> Result<std::path::PathBuf, String> {
+    let mut path = dirs::cache_dir().ok_or_else(|| "Get Cache Dir Failed".to_string())?;
+    path.push(&app_handle.config().tauri.bundle.identifier);
+    if !path.exists() {
+        std::fs::create_dir_all(&path).map_err(|e| e.to_string())?;
+    }
+    path.push(filename);
+    Ok(path)
+}
+
+pub fn overlay_cut_path(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    cache_file_path(app_handle, "pot_overlay_cut.png")
+}
+
+pub fn copy_screenshot_cut_to_overlay(app_handle: &tauri::AppHandle) {
+    let src = match cache_file_path(app_handle, "pot_screenshot_cut.png") {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("Failed to resolve screenshot cut path: {}", e);
+            return;
+        }
+    };
+    let dst = match overlay_cut_path(app_handle) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("Failed to resolve overlay cut path: {}", e);
+            return;
+        }
+    };
+    if src.exists() {
+        if let Err(e) = std::fs::copy(&src, &dst) {
+            log::warn!("Failed to copy screenshot cut to overlay cut: {}", e);
+        }
+    }
+}
+
+fn encode_file_base64(path: &std::path::Path) -> String {
+    use base64::{engine::general_purpose, Engine as _};
+    use std::fs::File;
+    if !path.exists() {
+        return String::new();
+    }
+    let mut file = match File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            error!("{:?}", e.to_string());
+            return String::new();
+        }
+    };
+    let mut vec = Vec::new();
+    if let Err(e) = file.read_to_end(&mut vec) {
+        error!("{:?}", e.to_string());
+        return String::new();
+    }
+    general_purpose::STANDARD.encode(&vec).replace("\r\n", "")
+}
+
+fn save_padded_crop(
+    img: &image::RgbaImage,
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+    dest_path: &std::path::Path,
+) -> Result<CropInfo, String> {
+    let padding = (8.0 * scale_factor.max(1.0)).round() as u32;
+    let image_width = img.width();
+    let image_height = img.height();
+    let right = left.saturating_add(width).min(image_width);
+    let bottom = top.saturating_add(height).min(image_height);
+    if right <= left || bottom <= top {
+        return Err("Invalid cut area after clamping".to_string());
+    }
+    let padded_left = left.saturating_sub(padding);
+    let padded_top = top.saturating_sub(padding);
+    let padded_right = right.saturating_add(padding).min(image_width);
+    let padded_bottom = bottom.saturating_add(padding).min(image_height);
+    let padded_width = padded_right - padded_left;
+    let padded_height = padded_bottom - padded_top;
+    info!(
+        "Padded overlay crop: {}x{}+{}+{} (padding {})",
+        padded_width, padded_height, padded_left, padded_top, padding
+    );
+    let cropped =
+        image::imageops::crop_imm(img, padded_left, padded_top, padded_width, padded_height)
+            .to_image();
+    cropped.save(dest_path).map_err(|e| e.to_string())?;
+    Ok(CropInfo {
+        padding_left: left - padded_left,
+        padding_top: top - padded_top,
+    })
+}
+
+#[tauri::command]
+pub fn get_overlay_base64(app_handle: tauri::AppHandle) -> String {
+    if let Ok(overlay_path) = overlay_cut_path(&app_handle) {
+        if overlay_path.exists() {
+            return encode_file_base64(&overlay_path);
+        }
+    }
+    if let Ok(screenshot_path) = cache_file_path(&app_handle, "pot_screenshot_cut.png") {
+        return encode_file_base64(&screenshot_path);
+    }
+    String::new()
+}
+
 #[tauri::command(async)]
-pub fn show_overlay_error(window: tauri::Window, title: String, body: String) {
-    crate::window::OVERLAY_DIALOG_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
-    tauri::api::dialog::message(Some(&window), title, body);
-    #[cfg(target_os = "windows")]
-    crate::window::finish_overlay_error_dialog();
-    #[cfg(not(target_os = "windows"))]
-    crate::window::OVERLAY_DIALOG_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
+pub fn capture_overlay_region(
+    app_handle: tauri::AppHandle,
+    monitor_x: i32,
+    monitor_y: i32,
+    left: u32,
+    top: u32,
+    width: u32,
+    height: u32,
+    scale_factor: f64,
+) -> Result<CropInfo, String> {
+    use screenshots::Screen;
+
+    let screens = Screen::all().map_err(|e| e.to_string())?;
+    let target_x = monitor_x + left as i32;
+    let target_y = monitor_y + top as i32;
+    let screen = screens
+        .iter()
+        .find(|s| s.display_info.x == monitor_x && s.display_info.y == monitor_y)
+        .or_else(|| {
+            screens.iter().find(|s| {
+                let d = s.display_info;
+                let w = ((d.width as f32) * d.scale_factor).round() as i32;
+                let h = ((d.height as f32) * d.scale_factor).round() as i32;
+                target_x >= d.x && target_x < d.x + w && target_y >= d.y && target_y < d.y + h
+            })
+        })
+        .or_else(|| screens.iter().find(|s| s.display_info.is_primary))
+        .or_else(|| screens.first())
+        .ok_or_else(|| format!("Monitor at ({monitor_x}, {monitor_y}) not found"))?;
+
+    let captured = screen.capture().map_err(|e| e.to_string())?;
+    let cap_w = captured.width();
+    let cap_h = captured.height();
+    let rgba = image::RgbaImage::from_raw(cap_w, cap_h, Vec::from(captured))
+        .ok_or_else(|| "Failed to wrap captured screen buffer".to_string())?;
+
+    let info = screen.display_info;
+    let rel_left = if info.x == monitor_x {
+        left
+    } else {
+        (target_x - info.x).max(0) as u32
+    };
+    let rel_top = if info.y == monitor_y {
+        top
+    } else {
+        (target_y - info.y).max(0) as u32
+    };
+
+    let dest = overlay_cut_path(&app_handle)?;
+    save_padded_crop(&rgba, rel_left, rel_top, width, height, scale_factor, &dest)
 }
 
 #[tauri::command]
@@ -107,27 +260,10 @@ pub fn cut_image(
 
 #[tauri::command]
 pub fn get_base64(app_handle: tauri::AppHandle) -> String {
-    use base64::{engine::general_purpose, Engine as _};
-    use dirs::cache_dir;
-    use std::fs::File;
-    use std::io::Read;
-    let mut app_cache_dir_path = cache_dir().expect("Get Cache Dir Failed");
-    app_cache_dir_path.push(&app_handle.config().tauri.bundle.identifier);
-    app_cache_dir_path.push("pot_screenshot_cut.png");
-    if !app_cache_dir_path.exists() {
-        return "".to_string();
+    match cache_file_path(&app_handle, "pot_screenshot_cut.png") {
+        Ok(path) => encode_file_base64(&path),
+        Err(_) => String::new(),
     }
-    let mut file = File::open(app_cache_dir_path).unwrap();
-    let mut vec = Vec::new();
-    match file.read_to_end(&mut vec) {
-        Ok(_) => {}
-        Err(e) => {
-            error!("{:?}", e.to_string());
-            return "".to_string();
-        }
-    }
-    let base64 = general_purpose::STANDARD.encode(&vec);
-    base64.replace("\r\n", "")
 }
 
 #[tauri::command]

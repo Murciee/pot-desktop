@@ -151,6 +151,10 @@
                 "overlay_target_language": "Target Language",
                 "overlay_target_follow": "Follow translation settings",
                 "overlay_opacity": "Background Opacity",
+                "overlay_theme": "Background Theme",
+                "overlay_theme_auto": "Auto (sample screen color)",
+                "overlay_theme_light": "Light",
+                "overlay_theme_dark": "Dark",
                 "overlay_font_scale": "Font Scale",
                 "overlay_concurrency": "Max Concurrency",
                 "overlay_refresh_hotkey": "Refresh Hotkey",
@@ -574,7 +578,14 @@
             "recognizing": "Recognizing…",
             "show_original": "Show original",
             "show_translation": "Show translation",
-            "unlock_hint": "Press the overlay shortcut to act"
+            "unlock_hint": "Press the overlay shortcut to act",
+            "unlock_hint_with_key": "Press {{hotkey}} to unlock",
+            "unlock_hint_no_key": "Set an overlay shortcut in Settings to unlock",
+            "retry_block_hint": "Click to retry this block",
+            "theme_auto": "Theme: Auto",
+            "theme_light": "Theme: Light",
+            "theme_dark": "Theme: Dark",
+            "screenshot_hint": "Drag to select region · Right-click or Esc to cancel"
         },
         "translate": {
             "translate": "Translate",

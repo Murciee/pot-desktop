@@ -101,11 +101,17 @@ jobs:
                   path: artifacts
                   merge-multiple: true
 
+            - name: Extract release notes
+              env:
+                  RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
+              run: node .scripts/extract-release-notes.mjs "$RELEASE_VERSION" > release-notes.md
+
             - name: Publish version release
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
-                  body_path: CHANGELOG
+                  name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
+                  body_path: release-notes.md
                   files: artifacts/*
                   fail_on_unmatched_files: true
 

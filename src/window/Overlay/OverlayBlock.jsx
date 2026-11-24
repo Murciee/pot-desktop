@@ -6,6 +6,25 @@ import {
     OVERLAY_MIN_FONT_SIZE,
 } from '../../utils/overlay_layout';
 
+const LANG_ATTR_MAP = {
+    zh_cn: 'zh-Hans',
+    zh_tw: 'zh-Hant',
+    yue: 'zh-HK',
+    ja: 'ja',
+    ko: 'ko',
+    en: 'en',
+    fr: 'fr',
+    es: 'es',
+    ru: 'ru',
+    de: 'de',
+    it: 'it',
+    pt: 'pt',
+    pt_br: 'pt-BR',
+    vi: 'vi',
+    th: 'th',
+    ar: 'ar',
+};
+
 export const OverlayBlock = React.memo(function OverlayBlock({
     block,
     displayMode,
@@ -18,6 +37,8 @@ export const OverlayBlock = React.memo(function OverlayBlock({
     opacity,
     overlayTheme,
     resolvedTheme,
+    targetLang,
+    ocrLang,
     locked,
     t,
     onRetryBlock,
@@ -108,7 +129,7 @@ export const OverlayBlock = React.memo(function OverlayBlock({
         setBaseFit((prev) =>
             prev.size === best && prev.overflowing === overflowing ? prev : { size: best, overflowing }
         );
-    }, [text, blockWidth, blockHeight, vertical, fitMaxSize, displayMode]);
+    }, [text, blockWidth, blockHeight, vertical, fitMaxSize, displayMode, block.fontWeight]);
 
     const displayFontSize = Math.max(
         OVERLAY_MIN_FONT_SIZE,
@@ -116,8 +137,11 @@ export const OverlayBlock = React.memo(function OverlayBlock({
     );
     const expanded = fontScale > 1.01;
     const maxExpandedHeight = Math.max(blockHeight, contentTop + contentHeight - top - 4);
+    const singleLine = (block.lineCount ?? 1) <= 1;
+    const activeLang = displayMode === 'original' ? ocrLang : targetLang;
+    const htmlLang = LANG_ATTR_MAP[String(activeLang ?? '').toLowerCase()] || undefined;
 
-    const palette = computeBlockColors(block.bgColor, overlayTheme, resolvedTheme, opacity);
+    const palette = computeBlockColors(block.bgColor, overlayTheme, resolvedTheme, opacity, block.fgColor);
     const tooltip = showError
         ? [block.errorMessage, !locked ? t('overlay.retry_block_hint') : ''].filter(Boolean).join('\n')
         : displayMode === 'translation' && !locked && block.translated
@@ -127,7 +151,8 @@ export const OverlayBlock = React.memo(function OverlayBlock({
     return (
         <div
             ref={ref}
-            dir='auto'
+            dir={vertical ? 'ltr' : 'auto'}
+            lang={htmlLang}
             title={tooltip}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
@@ -149,7 +174,7 @@ export const OverlayBlock = React.memo(function OverlayBlock({
                 maxHeight: expanded ? `${maxExpandedHeight}px` : `${blockHeight}px`,
                 zIndex: hovered && !locked ? 5 : 1,
                 boxSizing: 'border-box',
-                padding: vertical ? '4px 1px' : '1px 4px',
+                padding: singleLine ? (vertical ? '2px 0' : '0 2px') : vertical ? '4px 1px' : '1px 4px',
                 background: palette.background,
                 border: 'none',
                 boxShadow: showError ? 'none' : `inset 0 0 0 1px ${palette.borderColor}`,
@@ -158,7 +183,8 @@ export const OverlayBlock = React.memo(function OverlayBlock({
                 borderRadius: 4,
                 color: showError ? '#dc2626' : pending ? palette.mutedColor : palette.color,
                 fontStyle: pending ? 'italic' : 'normal',
-                lineHeight: 1.12,
+                fontWeight: pending ? 400 : block.fontWeight || 400,
+                lineHeight: singleLine ? 1.05 : vertical ? 1.26 : 1.18,
                 overflow: !locked && (expanded || baseFit.overflowing) ? 'auto' : 'hidden',
                 whiteSpace: 'pre-wrap',
                 overflowWrap: 'anywhere',

@@ -48,16 +48,67 @@ test('mergeLineBoxes merges paragraph lines but splits height-mismatched heading
     assert.deepEqual(blocks[2].bgColor, [30, 30, 30]);
 });
 
-test('mergeLineBoxes keeps vertical lines separate and preserves vertical flag', () => {
+test('mergeLineBoxes merges adjacent right-to-left vertical columns and keeps distant columns separate', () => {
     const blocks = mergeLineBoxes([
-        { text: '縦書き一', x: 50, y: 10, w: 20, h: 120, vertical: true, bgColor: [20, 20, 20] },
-        { text: '縦書き二', x: 20, y: 10, w: 20, h: 120, vertical: true, bgColor: [20, 20, 20] },
+        {
+            text: 'なんやかんやあって',
+            x: 150,
+            y: 10,
+            w: 20,
+            h: 160,
+            lineSize: 18,
+            vertical: true,
+            bgColor: [250, 250, 250],
+            fgColor: [20, 20, 20],
+            fontWeight: 700,
+        },
+        {
+            text: '梅と相互愛撫',
+            x: 120,
+            y: 12,
+            w: 20,
+            h: 120,
+            lineSize: 18,
+            vertical: true,
+            bgColor: [250, 250, 250],
+            fgColor: [20, 20, 20],
+            fontWeight: 700,
+        },
+        // Distant column on the far left should remain separate
+        {
+            text: '別枠テキスト',
+            x: 20,
+            y: 10,
+            w: 20,
+            h: 120,
+            lineSize: 18,
+            vertical: true,
+            bgColor: [20, 20, 20],
+            fgColor: [240, 240, 240],
+            fontWeight: 400,
+        },
     ]);
     assert.equal(blocks.length, 2);
     assert.equal(blocks[0].vertical, true);
-    assert.equal(blocks[0].lineSize, 20);
-    assert.equal(blocks[0].lineCount, 1);
+    assert.equal(blocks[0].text, 'なんやかんやあって梅と相互愛撫');
+    assert.equal(blocks[0].lineSize, 18);
+    assert.equal(blocks[0].lineCount, 2);
+    assert.equal(blocks[0].fontWeight, 700);
+    assert.deepEqual(blocks[0].fgColor, [20, 20, 20]);
     assert.equal(blocks[1].vertical, true);
+    assert.equal(blocks[1].text, '別枠テキスト');
+    assert.equal(blocks[1].lineCount, 1);
+});
+
+test('mergeLineBoxes chains isolated single-CJK character boxes into vertical columns', () => {
+    const blocks = mergeLineBoxes([
+        { text: '会', x: 30, y: 10, w: 22, h: 22, vertical: false },
+        { text: '長', x: 30, y: 36, w: 22, h: 22, vertical: false },
+    ]);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].vertical, true);
+    assert.equal(blocks[0].text, '会長');
+    assert.equal(blocks[0].lineSize, 22);
 });
 
 test('normalizeBlocks converts physical boxes to normalized ratios with orientation and color', () => {
@@ -109,6 +160,14 @@ test('computeBlockMaxFontSize matches original OCR line size and falls back safe
         computeBlockMaxFontSize({ blockWidth: 300, blockHeight: 200, vertical: false, lineSizePx: null, text: 'Line 1\nLine 2' }),
         85
     );
+    const singleLineFallback = computeBlockMaxFontSize({
+        blockWidth: 300,
+        blockHeight: 200,
+        vertical: false,
+        lineSizePx: null,
+        text: '这是一段没有坐标框的纯文本测试内容',
+    });
+    assert.ok(singleLineFallback > 25 && singleLineFallback < 60);
     assert.equal(
         computeBlockMaxFontSize({ blockWidth: 1000, blockHeight: 400, vertical: false, lineSizePx: 320 }),
         OVERLAY_MAX_AUTO_FONT_SIZE
@@ -144,6 +203,12 @@ test('computeBlockColors adapts ink contrast from sampled background or explicit
 
     const fallback = computeBlockColors(null, 'auto', 'dark', 0.8);
     assert.equal(fallback.isDark, true);
+
+    const highContrastFg = computeBlockColors([250, 250, 250], 'auto', 'light', 0.9, [30, 40, 50]);
+    assert.equal(highContrastFg.color, 'rgb(30,40,50)');
+
+    const lowContrastFg = computeBlockColors([250, 250, 250], 'auto', 'light', 0.9, [230, 230, 230]);
+    assert.equal(lowContrastFg.color, '#111111');
 });
 
 test('formatBatchPrompt and parseBatchTranslation handle multiline items and reject malformed output', () => {

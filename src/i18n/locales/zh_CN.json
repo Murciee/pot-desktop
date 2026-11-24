@@ -138,7 +138,7 @@
                 "overlay_only_windows": "覆盖翻译仅支持 Windows。",
                 "overlay_service": "服务实例",
                 "overlay_ocr_service": "OCR 引擎",
-                "overlay_ocr_service_hint": "仅框选识别使用此引擎；不支持文字坐标框的引擎会用译文覆盖整个选区。",
+                "overlay_ocr_service_hint": "仅框选识别使用此引擎；不支持文字坐标框的引擎会自动识别选区内文字方向与字号并覆盖译文。",
                 "overlay_service_follow": "跟随翻译窗口（第一个实例）",
                 "overlay_model": "翻译模型",
                 "overlay_model_follow": "跟随服务实例配置",

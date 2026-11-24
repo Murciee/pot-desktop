@@ -71,7 +71,7 @@ export default function Screenshot() {
         <>
             <img
                 ref={imgRef}
-                className='fixed top-0 left-0 w-full select-none'
+                className='fixed inset-0 w-screen h-screen select-none block'
                 src={imgurl}
                 draggable={false}
                 onLoad={() => {
@@ -168,38 +168,58 @@ export default function Screenshot() {
                             const rh = rect.height || window.innerHeight;
                             const imgWidth = imgRef.current.naturalWidth;
                             const imgHeight = imgRef.current.naturalHeight;
-                            const dpi = rw > 0 ? imgWidth / rw : 1;
-                            const scaleY = rh > 0 ? imgHeight / rh : dpi;
+                            const imgScaleX = rw > 0 ? imgWidth / rw : 1;
+                            const imgScaleY = rh > 0 ? imgHeight / rh : imgScaleX;
 
                             const leftCss = Math.min(mouseDownX, e.clientX) - rect.left;
                             const topCss = Math.min(mouseDownY, e.clientY) - rect.top;
                             const rightCss = Math.max(mouseDownX, e.clientX) - rect.left;
                             const bottomCss = Math.max(mouseDownY, e.clientY) - rect.top;
 
-                            const left = Math.max(0, Math.floor(leftCss * dpi));
-                            const top = Math.max(0, Math.floor(topCss * scaleY));
-                            const right = Math.min(imgWidth, Math.floor(rightCss * dpi));
-                            const bottom = Math.min(imgHeight, Math.floor(bottomCss * scaleY));
-                            const width = right - left;
-                            const height = bottom - top;
-                            if (width <= 0 || height <= 0) {
+                            const cropLeft = Math.max(0, Math.round(leftCss * imgScaleX));
+                            const cropTop = Math.max(0, Math.round(topCss * imgScaleY));
+                            const cropRight = Math.min(imgWidth, Math.round(rightCss * imgScaleX));
+                            const cropBottom = Math.min(imgHeight, Math.round(bottomCss * imgScaleY));
+                            const cropWidth = cropRight - cropLeft;
+                            const cropHeight = cropBottom - cropTop;
+                            if (cropWidth <= 0 || cropHeight <= 0) {
                                 warn('Screenshot area is too small');
                                 return;
                             }
                             await appWindow.hide();
                             try {
-                                const cropInfo = await invoke('cut_image', { left, top, width, height });
                                 const monitor = await currentMonitor();
+                                const winPhysW = monitor?.size?.width || imgWidth;
+                                const winPhysH = monitor?.size?.height || imgHeight;
+                                const winScaleX = rw > 0 ? winPhysW / rw : imgScaleX;
+                                const winScaleY = rh > 0 ? winPhysH / rh : imgScaleY;
+
+                                const winLeft = Math.max(0, Math.round(leftCss * winScaleX));
+                                const winTop = Math.max(0, Math.round(topCss * winScaleY));
+                                const winRight = Math.min(winPhysW, Math.round(rightCss * winScaleX));
+                                const winBottom = Math.min(winPhysH, Math.round(bottomCss * winScaleY));
+                                const winWidth = Math.max(1, winRight - winLeft);
+                                const winHeight = Math.max(1, winBottom - winTop);
+                                const effectiveDpr = monitor?.scaleFactor || window.devicePixelRatio || imgScaleX;
+
+                                const cropInfo = await invoke('cut_image', {
+                                    left: cropLeft,
+                                    top: cropTop,
+                                    width: cropWidth,
+                                    height: cropHeight,
+                                });
+                                const padRatioX = imgWidth > 0 ? winPhysW / imgWidth : 1;
+                                const padRatioY = imgHeight > 0 ? winPhysH / imgHeight : 1;
                                 await emit('overlay_rect', {
-                                    left,
-                                    top,
-                                    width,
-                                    height,
-                                    dpr: dpi,
-                                    screenX: monitor.position.x + left,
-                                    screenY: monitor.position.y + top,
-                                    paddingLeft: cropInfo.paddingLeft,
-                                    paddingTop: cropInfo.paddingTop,
+                                    left: winLeft,
+                                    top: winTop,
+                                    width: winWidth,
+                                    height: winHeight,
+                                    dpr: effectiveDpr,
+                                    screenX: (monitor?.position?.x ?? 0) + winLeft,
+                                    screenY: (monitor?.position?.y ?? 0) + winTop,
+                                    paddingLeft: Math.round(cropInfo.paddingLeft * padRatioX),
+                                    paddingTop: Math.round(cropInfo.paddingTop * padRatioY),
                                 });
                                 await emit('success');
                                 await appWindow.close();

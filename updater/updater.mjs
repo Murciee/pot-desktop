@@ -56,9 +56,12 @@ async function getChangeLog(token) {
     if (res.ok) {
         let data = await res.json();
         if (data['body']) {
-            let changelog_md = data['body'];
-
-            return changelog_md;
+            let changelog_md = String(data['body']);
+            const nextSection = changelog_md.search(/\r?\n##\s+v?\d+\.\d+/);
+            if (nextSection !== -1) {
+                changelog_md = changelog_md.slice(0, nextSection);
+            }
+            return changelog_md.trim();
         }
     }
 }

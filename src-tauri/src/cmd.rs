@@ -134,46 +134,68 @@ pub fn capture_overlay_region(
     height: u32,
     scale_factor: f64,
 ) -> Result<CropInfo, String> {
-    use screenshots::Screen;
-
-    let screens = Screen::all().map_err(|e| e.to_string())?;
     let target_x = monitor_x + left as i32;
     let target_y = monitor_y + top as i32;
-    let screen = screens
-        .iter()
-        .find(|s| s.display_info.x == monitor_x && s.display_info.y == monitor_y)
-        .or_else(|| {
-            screens.iter().find(|s| {
-                let d = s.display_info;
-                let w = ((d.width as f32) * d.scale_factor).round() as i32;
-                let h = ((d.height as f32) * d.scale_factor).round() as i32;
-                target_x >= d.x && target_x < d.x + w && target_y >= d.y && target_y < d.y + h
+
+    #[cfg(target_os = "windows")]
+    {
+        let (rgba, mon_x, mon_y) =
+            crate::screenshot::capture_monitor_rgba(monitor_x, monitor_y, Some((target_x, target_y)))?;
+        let rel_left = if mon_x == monitor_x {
+            left
+        } else {
+            (target_x - mon_x).max(0) as u32
+        };
+        let rel_top = if mon_y == monitor_y {
+            top
+        } else {
+            (target_y - mon_y).max(0) as u32
+        };
+        let dest = overlay_cut_path(&app_handle)?;
+        return save_padded_crop(&rgba, rel_left, rel_top, width, height, scale_factor, &dest);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        use screenshots::Screen;
+
+        let screens = Screen::all().map_err(|e| e.to_string())?;
+        let screen = screens
+            .iter()
+            .find(|s| s.display_info.x == monitor_x && s.display_info.y == monitor_y)
+            .or_else(|| {
+                screens.iter().find(|s| {
+                    let d = s.display_info;
+                    let w = ((d.width as f32) * d.scale_factor).round() as i32;
+                    let h = ((d.height as f32) * d.scale_factor).round() as i32;
+                    target_x >= d.x && target_x < d.x + w && target_y >= d.y && target_y < d.y + h
+                })
             })
-        })
-        .or_else(|| screens.iter().find(|s| s.display_info.is_primary))
-        .or_else(|| screens.first())
-        .ok_or_else(|| format!("Monitor at ({monitor_x}, {monitor_y}) not found"))?;
+            .or_else(|| screens.iter().find(|s| s.display_info.is_primary))
+            .or_else(|| screens.first())
+            .ok_or_else(|| format!("Monitor at ({monitor_x}, {monitor_y}) not found"))?;
 
-    let captured = screen.capture().map_err(|e| e.to_string())?;
-    let cap_w = captured.width();
-    let cap_h = captured.height();
-    let rgba = image::RgbaImage::from_raw(cap_w, cap_h, Vec::from(captured))
-        .ok_or_else(|| "Failed to wrap captured screen buffer".to_string())?;
+        let captured = screen.capture().map_err(|e| e.to_string())?;
+        let cap_w = captured.width();
+        let cap_h = captured.height();
+        let rgba = image::RgbaImage::from_raw(cap_w, cap_h, Vec::from(captured))
+            .ok_or_else(|| "Failed to wrap captured screen buffer".to_string())?;
 
-    let info = screen.display_info;
-    let rel_left = if info.x == monitor_x {
-        left
-    } else {
-        (target_x - info.x).max(0) as u32
-    };
-    let rel_top = if info.y == monitor_y {
-        top
-    } else {
-        (target_y - info.y).max(0) as u32
-    };
+        let info = screen.display_info;
+        let rel_left = if info.x == monitor_x {
+            left
+        } else {
+            (target_x - info.x).max(0) as u32
+        };
+        let rel_top = if info.y == monitor_y {
+            top
+        } else {
+            (target_y - info.y).max(0) as u32
+        };
 
-    let dest = overlay_cut_path(&app_handle)?;
-    save_padded_crop(&rgba, rel_left, rel_top, width, height, scale_factor, &dest)
+        let dest = overlay_cut_path(&app_handle)?;
+        save_padded_crop(&rgba, rel_left, rel_top, width, height, scale_factor, &dest)
+    }
 }
 
 #[tauri::command]

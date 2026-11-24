@@ -152,6 +152,7 @@ fn main() {
             copy_img,
             system_ocr,
             system_ocr_boxes,
+            analyze_overlay_image,
             get_overlay_state,
             set_overlay_pinned,
             set_overlay_busy,

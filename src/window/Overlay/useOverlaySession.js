@@ -436,17 +436,59 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
 
                 let trimmed;
                 if (!hasBoxes) {
-                    info('[overlay] OCR returned plain text, using a single block for the selection');
+                    const padLeft = overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1));
+                    const padTop = overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1));
+                    let analysis = null;
+                    try {
+                        analysis = await invoke('analyze_overlay_image', {
+                            paddingLeft: padLeft,
+                            paddingTop: padTop,
+                            width: overlayState.width,
+                            height: overlayState.height,
+                        });
+                    } catch (e) {
+                        logError(`[overlay] analyze image failed: ${e?.toString?.() ?? String(e)}`);
+                    }
+                    if (isStale()) {
+                        return;
+                    }
+                    const rawW = Number(analysis?.w);
+                    const rawH = Number(analysis?.h);
+                    const useAnalysis =
+                        analysis && Number.isFinite(rawW) && rawW > 0 && Number.isFinite(rawH) && rawH > 0;
+                    info(
+                        useAnalysis
+                            ? `[overlay] OCR returned plain text, image analysis detected ${
+                                  analysis.vertical ? 'vertical' : 'horizontal'
+                              } ${analysis.lineCount} lines`
+                            : '[overlay] OCR returned plain text, using a single block for the selection'
+                    );
                     trimmed = [
-                        {
-                            x: 0,
-                            y: 0,
-                            w: overlayState.width,
-                            h: overlayState.height,
-                            text: plainText,
-                            vertical: false,
-                            bgColor: null,
-                        },
+                        useAnalysis
+                            ? {
+                                  x: Number(analysis.x) || 0,
+                                  y: Number(analysis.y) || 0,
+                                  w: rawW,
+                                  h: rawH,
+                                  text: plainText,
+                                  vertical: Boolean(analysis.vertical),
+                                  lineSize: analysis.lineSize ?? null,
+                                  lineCount: analysis.lineCount || 1,
+                                  bgColor: analysis.bgColor ?? null,
+                                  fgColor: analysis.fgColor ?? null,
+                                  fontWeight: analysis.fontWeight || 400,
+                              }
+                            : {
+                                  x: 0,
+                                  y: 0,
+                                  w: overlayState.width,
+                                  h: overlayState.height,
+                                  text: plainText,
+                                  vertical: false,
+                                  bgColor: null,
+                                  fgColor: null,
+                                  fontWeight: 400,
+                              },
                     ];
                 } else {
                     info(`[overlay] OCR returned ${boxes.length} line boxes`);

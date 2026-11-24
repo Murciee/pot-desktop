@@ -138,7 +138,7 @@
                 "overlay_only_windows": "Overlay translation is only available on Windows.",
                 "overlay_service": "Service Instance",
                 "overlay_ocr_service": "OCR Engine",
-                "overlay_ocr_service_hint": "Used only for selection OCR. Engines without text boxes display the translation over the whole selection.",
+                "overlay_ocr_service_hint": "Used only for selection OCR. Engines without text boxes automatically infer text orientation and font size from the selection.",
                 "overlay_service_follow": "Follow translation window (first instance)",
                 "overlay_model": "Translation Model",
                 "overlay_model_follow": "Follow service configuration",

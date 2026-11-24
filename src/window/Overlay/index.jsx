@@ -16,6 +16,8 @@ import { useOverlaySession } from './useOverlaySession';
 
 const TOOLBAR_HEIGHT = 32;
 const THEME_CYCLE = ['auto', 'light', 'dark'];
+const DEFAULT_FONT_STACK =
+    '"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC","Segoe UI",system-ui,sans-serif';
 
 export default function Overlay() {
     const { t } = useTranslation();
@@ -110,6 +112,10 @@ export default function Overlay() {
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
     }, []);
+
+    useEffect(() => {
+        setViewport({ width: window.innerWidth, height: window.innerHeight });
+    }, [state, toolbarLayout]);
 
     useEffect(() => {
         appWindow.setIgnoreCursorEvents(locked).catch(() => {});
@@ -265,9 +271,10 @@ export default function Overlay() {
     }, []);
 
     const opacity = Math.min(1, Math.max(0.3, Number(overlayOpacity) || 0.85));
-    const fontFamily = `"${appFont === 'default' || !appFont ? 'sans-serif' : appFont}","${
-        appFallbackFont === 'default' || !appFallbackFont ? 'sans-serif' : appFallbackFont
-    }"`;
+    const primaryFont = appFont === 'default' || !appFont ? DEFAULT_FONT_STACK : `"${appFont}"`;
+    const fallbackFont =
+        appFallbackFont === 'default' || !appFallbackFont ? DEFAULT_FONT_STACK : `"${appFallbackFont}"`;
+    const fontFamily = `${primaryFont},${fallbackFont}`;
 
     const dpr = state?.dpr > 0 ? state.dpr : 1;
     const baseWidth = state ? state.width / dpr : viewport.width;
@@ -388,6 +395,8 @@ export default function Overlay() {
                     opacity={opacity}
                     overlayTheme={effectiveThemeMode}
                     resolvedTheme={resolvedTheme}
+                    targetLang={state?.targetLang}
+                    ocrLang={state?.ocrLang}
                     locked={locked}
                     t={t}
                     onRetryBlock={retryBlock}

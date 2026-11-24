@@ -44,55 +44,194 @@ function averageColors(samples) {
     return [Math.round(r / count), Math.round(g / count), Math.round(b / count)];
 }
 
+function hasHorizontalNeighbor(target, allLines) {
+    for (const other of allLines) {
+        if (other === target) {
+            continue;
+        }
+        const vOverlap =
+            Math.min(target.y + target.h, other.y + other.h) - Math.max(target.y, other.y);
+        const minH = Math.min(target.h, other.h);
+        if (minH <= 0 || vOverlap / minH <= 0.5) {
+            continue;
+        }
+        const maxH = Math.max(target.h, other.h);
+        if (maxH / minH > 1.55) {
+            continue;
+        }
+        const hGap = Math.max(other.x - (target.x + target.w), target.x - (other.x + other.w));
+        if (hGap >= -minH * 0.2 && hGap <= Math.min(target.w, other.w) * 0.65) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function chainSingleCharVerticalColumns(lines) {
+    const isCharCandidate = (line) => {
+        if (line.vertical) {
+            return false;
+        }
+        const stripped = line.text.replace(/\s+/g, '');
+        if (stripped.length === 0 || stripped.length > 2) {
+            return false;
+        }
+        const hasCjk = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]/.test(stripped);
+        if (!hasCjk) {
+            return false;
+        }
+        const aspect = line.w / line.h;
+        return aspect >= 0.55 && aspect <= 1.6;
+    };
+
+    const candidates = lines
+        .filter((line) => isCharCandidate(line) && !hasHorizontalNeighbor(line, lines))
+        .sort((a, b) => a.y - b.y || b.x + b.w - (a.x + a.w));
+
+    const used = new Set();
+    const chains = [];
+
+    for (const item of candidates) {
+        let target = null;
+        for (let i = chains.length - 1; i >= 0; i -= 1) {
+            const chain = chains[i];
+            const minW = Math.min(chain.lastW, item.w);
+            const minH = Math.min(chain.lastH, item.h);
+            const maxH = Math.max(chain.lastH, item.h);
+            if (minW <= 0 || minH <= 0 || maxH / minH > 1.55) {
+                continue;
+            }
+            const hOverlap =
+                Math.min(chain.lastX + chain.lastW, item.x + item.w) - Math.max(chain.lastX, item.x);
+            if (hOverlap / minW <= 0.45) {
+                continue;
+            }
+            const vGap = item.y - (chain.lastY + chain.lastH);
+            if (vGap >= -minH * 0.2 && vGap <= minH * 0.9) {
+                target = chain;
+                break;
+            }
+        }
+        if (target) {
+            target.items.push(item);
+            target.lastX = item.x;
+            target.lastY = item.y;
+            target.lastW = item.w;
+            target.lastH = item.h;
+        } else {
+            chains.push({
+                items: [item],
+                lastX: item.x,
+                lastY: item.y,
+                lastW: item.w,
+                lastH: item.h,
+            });
+        }
+    }
+
+    const result = [];
+    for (const chain of chains) {
+        if (chain.items.length >= 2) {
+            for (const item of chain.items) {
+                used.add(item);
+            }
+            let minX = Infinity;
+            let minY = Infinity;
+            let maxX = -Infinity;
+            let maxY = -Infinity;
+            let text = '';
+            const widths = [];
+            const bgs = [];
+            const fgs = [];
+            const weights = [];
+            for (const item of chain.items) {
+                minX = Math.min(minX, item.x);
+                minY = Math.min(minY, item.y);
+                maxX = Math.max(maxX, item.x + item.w);
+                maxY = Math.max(maxY, item.y + item.h);
+                text = text ? joinLineText(text, item.text.trim()) : item.text.trim();
+                widths.push(item.lineSize > 0 ? item.lineSize : item.w);
+                if (item.bgColor) {
+                    bgs.push(item.bgColor);
+                }
+                if (item.fgColor) {
+                    fgs.push(item.fgColor);
+                }
+                weights.push(item.fontWeight || 400);
+            }
+            result.push({
+                x: minX,
+                y: minY,
+                w: maxX - minX,
+                h: maxY - minY,
+                text,
+                vertical: true,
+                lineSize: median(widths),
+                bgColor: averageColors(bgs),
+                fgColor: averageColors(fgs),
+                fontWeight: Math.round(median(weights)) || 400,
+            });
+        }
+    }
+
+    for (const line of lines) {
+        if (!used.has(line)) {
+            result.push(line);
+        }
+    }
+    return result;
+}
+
 /**
  * Merge OCR line boxes that belong to the same paragraph.
- * Uses local line height ratio, orientation consistency, and last-line
- * horizontal overlap so wide headings do not merge separate columns underneath.
+ * Supports top-to-bottom horizontal paragraphs and right-to-left vertical columns.
  */
 export function mergeLineBoxes(lines) {
-    const valid = (lines ?? [])
+    const normalized = (lines ?? [])
         .filter((line) => line && typeof line.text === 'string' && line.text.trim() !== '' && line.w > 0 && line.h > 0)
         .map((line) => ({
             ...line,
             vertical: Boolean(line.vertical),
             bgColor: Array.isArray(line.bgColor) && line.bgColor.length === 3 ? line.bgColor : null,
-        }))
-        .sort((a, b) => a.y - b.y || a.x - b.x);
+            fgColor: Array.isArray(line.fgColor) && line.fgColor.length === 3 ? line.fgColor : null,
+            fontWeight: Number(line.fontWeight) || 400,
+        }));
 
-    if (valid.length === 0) {
+    if (normalized.length === 0) {
         return [];
     }
 
+    const prepared = chainSingleCharVerticalColumns(normalized);
+    const horizLines = prepared.filter((l) => !l.vertical).sort((a, b) => a.y - b.y || a.x - b.x);
+    const vertLines = prepared
+        .filter((l) => l.vertical)
+        .sort((a, b) => b.x + b.w - (a.x + a.w) || a.y - b.y);
+
     const blocks = [];
 
-    for (const line of valid) {
+    for (const line of horizLines) {
         const lineText = line.text.trim();
-        const lineSize = line.vertical ? line.w : line.h;
+        const lineSize = Number(line.lineSize) > 0 ? Number(line.lineSize) : line.h;
         let target = null;
 
-        if (!line.vertical) {
-            for (let i = blocks.length - 1; i >= 0; i -= 1) {
-                const block = blocks[i];
-                if (block.vertical) {
-                    continue;
-                }
-                const minH = Math.max(1, Math.min(block.lastLineH, line.h));
-                const maxH = Math.max(block.lastLineH, line.h);
-                if (maxH / minH > 1.55) {
-                    continue;
-                }
-                const gap = line.y - (block.lastLineY + block.lastLineH);
-                if (gap < -minH * 0.35 || gap >= minH * 0.75) {
-                    continue;
-                }
-                const overlap =
-                    Math.min(block.lastLineX + block.lastLineW, line.x + line.w) -
-                    Math.max(block.lastLineX, line.x);
-                const minWidth = Math.min(block.lastLineW, line.w);
-                if (minWidth > 0 && overlap / minWidth > 0.25) {
-                    target = block;
-                    break;
-                }
+        for (let i = blocks.length - 1; i >= 0; i -= 1) {
+            const block = blocks[i];
+            const minH = Math.max(1, Math.min(block.lastLineH, line.h));
+            const maxH = Math.max(block.lastLineH, line.h);
+            if (maxH / minH > 1.55) {
+                continue;
+            }
+            const gap = line.y - (block.lastLineY + block.lastLineH);
+            if (gap < -minH * 0.35 || gap >= minH * 0.75) {
+                continue;
+            }
+            const overlap =
+                Math.min(block.lastLineX + block.lastLineW, line.x + line.w) -
+                Math.max(block.lastLineX, line.x);
+            const minWidth = Math.min(block.lastLineW, line.w);
+            if (minWidth > 0 && overlap / minWidth > 0.25) {
+                target = block;
+                break;
             }
         }
 
@@ -112,6 +251,10 @@ export function mergeLineBoxes(lines) {
             if (line.bgColor) {
                 target.bgSamples.push(line.bgColor);
             }
+            if (line.fgColor) {
+                target.fgSamples.push(line.fgColor);
+            }
+            target.fontWeights.push(line.fontWeight || 400);
         } else {
             blocks.push({
                 x: line.x,
@@ -123,24 +266,101 @@ export function mergeLineBoxes(lines) {
                 lastLineW: line.w,
                 lastLineH: line.h,
                 text: lineText,
-                vertical: line.vertical,
+                vertical: false,
                 lineSizes: [lineSize],
                 bgSamples: line.bgColor ? [line.bgColor] : [],
+                fgSamples: line.fgColor ? [line.fgColor] : [],
+                fontWeights: [line.fontWeight || 400],
             });
         }
     }
 
-    return blocks.map(({ x, y, w, h, text, vertical, lineSizes, bgSamples }) => ({
-        x,
-        y,
-        w,
-        h,
-        text,
-        vertical,
-        lineSize: median(lineSizes),
-        lineCount: lineSizes.length,
-        bgColor: averageColors(bgSamples),
-    }));
+    const vertBlocks = [];
+    for (const line of vertLines) {
+        const lineText = line.text.trim();
+        const lineSize = Number(line.lineSize) > 0 ? Number(line.lineSize) : line.w;
+        let target = null;
+
+        for (let i = vertBlocks.length - 1; i >= 0; i -= 1) {
+            const block = vertBlocks[i];
+            const minW = Math.max(1, Math.min(block.lastLineW, line.w));
+            const maxW = Math.max(block.lastLineW, line.w);
+            if (maxW / minW > 1.65) {
+                continue;
+            }
+            const gap = block.lastLineX - (line.x + line.w);
+            if (gap < -minW * 0.35 || gap > minW * 1.25) {
+                continue;
+            }
+            const overlap =
+                Math.min(block.lastLineY + block.lastLineH, line.y + line.h) -
+                Math.max(block.lastLineY, line.y);
+            const minHeight = Math.min(block.lastLineH, line.h);
+            if (minHeight <= 0 || overlap / minHeight <= 0.25) {
+                continue;
+            }
+            if (Math.abs(line.y - block.y) > Math.max(maxW * 2.5, block.h * 0.35)) {
+                continue;
+            }
+            target = block;
+            break;
+        }
+
+        if (target) {
+            const right = Math.max(target.x + target.w, line.x + line.w);
+            const bottom = Math.max(target.y + target.h, line.y + line.h);
+            target.x = Math.min(target.x, line.x);
+            target.y = Math.min(target.y, line.y);
+            target.w = right - target.x;
+            target.h = bottom - target.y;
+            target.lastLineX = line.x;
+            target.lastLineY = line.y;
+            target.lastLineW = line.w;
+            target.lastLineH = line.h;
+            target.text = joinLineText(target.text, lineText);
+            target.lineSizes.push(lineSize);
+            if (line.bgColor) {
+                target.bgSamples.push(line.bgColor);
+            }
+            if (line.fgColor) {
+                target.fgSamples.push(line.fgColor);
+            }
+            target.fontWeights.push(line.fontWeight || 400);
+        } else {
+            vertBlocks.push({
+                x: line.x,
+                y: line.y,
+                w: line.w,
+                h: line.h,
+                lastLineX: line.x,
+                lastLineY: line.y,
+                lastLineW: line.w,
+                lastLineH: line.h,
+                text: lineText,
+                vertical: true,
+                lineSizes: [lineSize],
+                bgSamples: line.bgColor ? [line.bgColor] : [],
+                fgSamples: line.fgColor ? [line.fgColor] : [],
+                fontWeights: [line.fontWeight || 400],
+            });
+        }
+    }
+
+    return [...blocks, ...vertBlocks].map(
+        ({ x, y, w, h, text, vertical, lineSizes, bgSamples, fgSamples, fontWeights }) => ({
+            x,
+            y,
+            w,
+            h,
+            text,
+            vertical,
+            lineSize: median(lineSizes),
+            lineCount: lineSizes.length,
+            bgColor: averageColors(bgSamples),
+            fgColor: averageColors(fgSamples),
+            fontWeight: Math.round(median(fontWeights)) || 400,
+        })
+    );
 }
 
 /**
@@ -176,6 +396,8 @@ export function normalizeBlocks(blocks, width, height, dpr) {
             nLineSize,
             lineCount,
             bgColor: block.bgColor ?? null,
+            fgColor: block.fgColor ?? null,
+            fontWeight: block.fontWeight || 400,
         };
     });
 }
@@ -202,6 +424,14 @@ export function computeBlockMaxFontSize({
                 .split(/\r?\n/)
                 .filter((line) => line.trim() !== '').length || 1;
         raw = (axisSize / nonEmptyLines) * 0.85;
+        const charCount = Array.from(String(text ?? '').replace(/\s+/g, '')).length;
+        if (nonEmptyLines === 1 && charCount >= 4 && blockWidth > 0 && blockHeight > 0) {
+            const areaCap = Math.max(
+                OVERLAY_MIN_FONT_SIZE,
+                Math.sqrt((blockWidth * blockHeight * 0.55) / charCount)
+            );
+            raw = Math.min(raw, areaCap);
+        }
     }
     return Math.max(OVERLAY_MIN_FONT_SIZE, Math.min(OVERLAY_MAX_AUTO_FONT_SIZE, raw));
 }
@@ -236,7 +466,21 @@ export function shouldSkipTranslation(text, targetLang) {
     return false;
 }
 
-export function computeBlockColors(bgColor, themeMode, appResolvedTheme, opacity) {
+function relativeLuminance(r, g, b) {
+    const toLinear = (c) => {
+        const v = c / 255;
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    };
+    return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function contrastRatio(rgb1, rgb2) {
+    const l1 = relativeLuminance(rgb1[0], rgb1[1], rgb1[2]);
+    const l2 = relativeLuminance(rgb2[0], rgb2[1], rgb2[2]);
+    return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+export function computeBlockColors(bgColor, themeMode, appResolvedTheme, opacity, fgColor = null) {
     const alpha = Math.min(1, Math.max(0.3, Number(opacity) || 0.85));
     let useDark = false;
     let rgb = null;
@@ -257,10 +501,18 @@ export function computeBlockColors(bgColor, themeMode, appResolvedTheme, opacity
         rgb = useDark ? [24, 24, 27] : [255, 255, 255];
     }
 
+    let color = useDark ? '#f4f4f5' : '#111111';
+    if ((!themeMode || themeMode === 'auto') && Array.isArray(fgColor) && fgColor.length === 3) {
+        const fg = fgColor.map((v) => Math.min(255, Math.max(0, Math.round(Number(v) || 0))));
+        if (contrastRatio(fg, rgb) >= 4.2) {
+            color = `rgb(${fg[0]},${fg[1]},${fg[2]})`;
+        }
+    }
+
     const borderColor = useDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.15)';
     return {
         background: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`,
-        color: useDark ? '#f4f4f5' : '#111111',
+        color,
         mutedColor: useDark ? '#a1a1aa' : '#52525b',
         border: `1px solid ${borderColor}`,
         borderColor,

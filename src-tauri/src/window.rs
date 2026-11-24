@@ -433,7 +433,18 @@ pub fn recognize_window() {
 
 #[cfg(not(target_os = "macos"))]
 fn screenshot_window() -> Window {
-    let (window, _exists) = build_window("screenshot", "Screenshot");
+    use mouse_position::mouse_position::{Mouse, Position};
+
+    let (window, exists) = build_window("screenshot", "Screenshot");
+    if exists {
+        let mouse_position = match Mouse::get_mouse_position() {
+            Mouse::Position { x, y } => Position { x, y },
+            Mouse::Error => Position { x: 0, y: 0 },
+        };
+        let monitor = get_current_monitor(mouse_position.x, mouse_position.y);
+        let _ = window.set_fullscreen(false);
+        let _ = window.set_position(*monitor.position());
+    }
 
     window.set_skip_taskbar(true).unwrap();
     #[cfg(target_os = "macos")]
@@ -1107,6 +1118,60 @@ pub fn sync_overlay_geometry(window: Window) -> Result<OverlayState, String> {
     Ok(state.clone())
 }
 
+#[cfg(target_os = "windows")]
+fn set_overlay_window_rect(
+    window: &Window,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
+        SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_CLIENTEDGE, WS_EX_STATICEDGE, WS_EX_WINDOWEDGE,
+    };
+
+    let raw_hwnd = window.hwnd().map_err(|e| e.to_string())?;
+    let hwnd = HWND(raw_hwnd.0 as *mut core::ffi::c_void);
+    let edge_mask = (WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE).0 as i32;
+
+    unsafe {
+        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let mut flags = SWP_NOZORDER | SWP_NOACTIVATE;
+        if (ex_style & edge_mask) != 0 {
+            SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !edge_mask);
+            flags |= SWP_FRAMECHANGED;
+        }
+        SetWindowPos(
+            hwnd,
+            HWND::default(),
+            x,
+            y,
+            width.max(1) as i32,
+            height.max(1) as i32,
+            flags,
+        )
+        .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_overlay_window_rect(
+    window: &Window,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    window
+        .set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(tauri::PhysicalSize::new(width.max(1), height.max(1)))
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn set_overlay_toolbar(
     window: Window,
@@ -1119,14 +1184,26 @@ pub fn set_overlay_toolbar(
         if let Some(prev_layout) = toolbar.take() {
             if let Some(state) = state_guard.as_mut() {
                 sync_state_from_window(&window, state, Some(&prev_layout));
-                let _ = window.set_position(tauri::PhysicalPosition::new(
+                let _ = set_overlay_window_rect(
+                    &window,
                     state.screen_x,
                     state.screen_y,
-                ));
-                let _ = window.set_size(tauri::PhysicalSize::new(state.width, state.height));
+                    state.width,
+                    state.height,
+                );
             }
         } else if let Some(state) = state_guard.as_mut() {
-            sync_state_from_window(&window, state, None);
+            if window.is_visible().unwrap_or(false) {
+                sync_state_from_window(&window, state, None);
+            } else {
+                let _ = set_overlay_window_rect(
+                    &window,
+                    state.screen_x,
+                    state.screen_y,
+                    state.width,
+                    state.height,
+                );
+            }
         }
 
         let (cw, ch, ww, wh) = state_guard
@@ -1234,12 +1311,7 @@ pub fn set_overlay_toolbar(
         )
     };
 
-    window
-        .set_position(tauri::PhysicalPosition::new(x, y))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(tauri::PhysicalSize::new(width, height))
-        .map_err(|e| e.to_string())?;
+    set_overlay_window_rect(&window, x, y, width, height)?;
     *toolbar = Some(layout.clone());
     Ok(layout)
 }
@@ -1298,6 +1370,10 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
     let app_handle = APP.get().unwrap();
     close_overlay_window(app_handle, true);
 
+    let dpr = if state.dpr > 0.0 { state.dpr } else { 1.0 };
+    let logical_w = (state.width as f64 / dpr).max(1.0);
+    let logical_h = (state.height as f64 / dpr).max(1.0);
+
     let window = tauri::WindowBuilder::new(
         app_handle,
         "overlay",
@@ -1312,15 +1388,12 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
     .focused(false)
     .visible(false)
     .resizable(true)
+    .min_inner_size(1.0, 1.0)
+    .inner_size(logical_w, logical_h)
     .build()
     .map_err(|e| e.to_string())?;
 
-    window
-        .set_position(tauri::PhysicalPosition::new(state.screen_x, state.screen_y))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(tauri::PhysicalSize::new(state.width, state.height))
-        .map_err(|e| e.to_string())?;
+    set_overlay_window_rect(&window, state.screen_x, state.screen_y, state.width, state.height)?;
     window
         .set_ignore_cursor_events(true)
         .map_err(|e| e.to_string())?;

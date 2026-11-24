@@ -1,3 +1,11 @@
+## 3.0.25 (2026-11-24)
+
+### Bugs fixed:
+
+-   Fix overlay translation font size, stroke weight, foreground contrast, and vertical/horizontal text direction detection across both WinRT and plain-text OCR engines.
+-   Fix Windows high-DPI screen capture and borderless overlay window bounds so the overlay matches the exact selected region without oversizing.
+-   Extract only the current tag's section from `CHANGELOG` when publishing GitHub Releases and updater manifests.
+
 ## 3.0.24 (2026-11-23)
 
 ### Bugs fixed:

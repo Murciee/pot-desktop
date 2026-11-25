@@ -1,4 +1,5 @@
 import { fetch, Body } from '@tauri-apps/api/http';
+import { executeWithDisableThinking } from '../../../utils/openai_thinking';
 import { Language } from './info';
 import { defaultRequestArguments, normalizeChatUrl } from './utils';
 
@@ -56,23 +57,41 @@ export async function translate(text, from, to, options) {
         stream: stream,
         messages: promptList,
     };
-    if (disableThinking) {
-        // Supported by OpenAI-compatible reasoning endpoints that accept a
-        // reasoning_effort field. Providers without it ignore the extra key.
-        body.reasoning_effort = 'none';
-    }
     if (service === 'openai') {
         body['model'] = model;
     }
+    const cacheKey = `${apiUrl.href}::${model || ''}`;
     if (stream) {
-        const res = await window.fetch(apiUrl.href, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(body),
+        const result = await executeWithDisableThinking({
+            cacheKey,
+            disableThinking: Boolean(disableThinking),
+            baseBody: body,
+            sendRequest: async (payload) => {
+                const res = await window.fetch(apiUrl.href, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => '');
+                    return {
+                        ok: false,
+                        status: res.status,
+                        data: errText,
+                        response: res,
+                    };
+                }
+                return {
+                    ok: true,
+                    status: res.status,
+                    data: null,
+                    response: res,
+                };
+            },
         });
-        if (res.ok) {
+        if (result.ok) {
             let target = '';
-            const reader = res.body.getReader();
+            const reader = result.response.body.getReader();
             try {
                 let temp = '';
                 while (true) {
@@ -88,9 +107,9 @@ export async function translate(text, from, to, options) {
                             try {
                                 if (temp !== '') {
                                     data = temp + data.trim();
-                                    let result = JSON.parse(data.trim());
-                                    if (result.choices[0].delta.content) {
-                                        target += result.choices[0].delta.content;
+                                    let chunk = JSON.parse(data.trim());
+                                    if (chunk.choices[0].delta.content) {
+                                        target += chunk.choices[0].delta.content;
                                         if (setResult) {
                                             setResult(target + '_');
                                         } else {
@@ -99,9 +118,9 @@ export async function translate(text, from, to, options) {
                                     }
                                     temp = '';
                                 } else {
-                                    let result = JSON.parse(data.trim());
-                                    if (result.choices[0].delta.content) {
-                                        target += result.choices[0].delta.content;
+                                    let chunk = JSON.parse(data.trim());
+                                    if (chunk.choices[0].delta.content) {
+                                        target += chunk.choices[0].delta.content;
                                         if (setResult) {
                                             setResult(target + '_');
                                         } else {
@@ -119,13 +138,28 @@ export async function translate(text, from, to, options) {
                 reader.releaseLock();
             }
         } else {
-            throw `Http Request Error\nHttp Status: ${res.status}\n${JSON.stringify(res.data)}`;
+            throw `Http Request Error\nHttp Status: ${result.status}\n${
+                typeof result.data === 'string' ? result.data : JSON.stringify(result.data)
+            }`;
         }
     } else {
-        let res = await fetch(apiUrl.href, {
-            method: 'POST',
-            headers: headers,
-            body: Body.json(body),
+        const res = await executeWithDisableThinking({
+            cacheKey,
+            disableThinking: Boolean(disableThinking),
+            baseBody: body,
+            sendRequest: async (payload) => {
+                const r = await fetch(apiUrl.href, {
+                    method: 'POST',
+                    headers: headers,
+                    body: Body.json(payload),
+                });
+                return {
+                    ok: r.ok,
+                    status: r.status,
+                    data: r.data,
+                    response: r,
+                };
+            },
         });
         if (res.ok) {
             let result = res.data;

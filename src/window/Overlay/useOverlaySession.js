@@ -14,9 +14,8 @@ import {
 } from '../../utils/overlay_layout';
 import { recognizeOverlay } from '../../utils/overlay_ocr';
 import { getServiceName } from '../../utils/service_instance';
-import { store } from '../../utils/store';
+import { setConfigValue } from '../../utils/store';
 import {
-    reloadTranslateStore,
     seedTranslateCache,
     translateWithService,
 } from '../../utils/translate_text';
@@ -135,12 +134,6 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
     }, []);
 
     const loadLatestOverlayState = useCallback(async () => {
-        try {
-            await invoke('reload_store');
-            await reloadTranslateStore();
-        } catch (e) {
-            logError(`[overlay] reload store failed: ${e?.toString?.() ?? String(e)}`);
-        }
         try {
             const latest = await invoke('refresh_overlay_state');
             if (!disposedRef.current) {
@@ -392,6 +385,22 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
             setPhase('recognizing');
 
             try {
+                const padLeft = overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1));
+                const padTop = overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1));
+                const ocrServiceName = getServiceName(overlayState.ocrService || 'system');
+                const analysisPromise =
+                    ocrServiceName !== 'system'
+                        ? invoke('analyze_overlay_image', {
+                              paddingLeft: padLeft,
+                              paddingTop: padTop,
+                              width: overlayState.width,
+                              height: overlayState.height,
+                          }).catch((e) => {
+                              logError(`[overlay] analyze image failed: ${e?.toString?.() ?? String(e)}`);
+                              return null;
+                          })
+                        : null;
+
                 let boxes;
                 let plainText = '';
                 let hasBoxes = false;
@@ -436,18 +445,20 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
 
                 let trimmed;
                 if (!hasBoxes) {
-                    const padLeft = overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1));
-                    const padTop = overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1));
                     let analysis = null;
-                    try {
-                        analysis = await invoke('analyze_overlay_image', {
-                            paddingLeft: padLeft,
-                            paddingTop: padTop,
-                            width: overlayState.width,
-                            height: overlayState.height,
-                        });
-                    } catch (e) {
-                        logError(`[overlay] analyze image failed: ${e?.toString?.() ?? String(e)}`);
+                    if (analysisPromise) {
+                        analysis = await analysisPromise;
+                    } else {
+                        try {
+                            analysis = await invoke('analyze_overlay_image', {
+                                paddingLeft: padLeft,
+                                paddingTop: padTop,
+                                width: overlayState.width,
+                                height: overlayState.height,
+                            });
+                        } catch (e) {
+                            logError(`[overlay] analyze image failed: ${e?.toString?.() ?? String(e)}`);
+                        }
                     }
                     if (isStale()) {
                         return;
@@ -504,8 +515,6 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
                         setLocked(false);
                         return;
                     }
-                    const padLeft = overlayState.paddingLeft ?? Math.round(8 * (overlayState.dpr || 1));
-                    const padTop = overlayState.paddingTop ?? Math.round(8 * (overlayState.dpr || 1));
                     trimmed = merged.map((block) => ({
                         ...block,
                         x: block.x - padLeft,
@@ -767,8 +776,7 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
             return;
         }
         try {
-            await store.set('overlay_service_instance', next);
-            await store.save();
+            await setConfigValue('overlay_service_instance', next);
         } catch (e) {
             logError(`[overlay] save channel failed: ${e?.toString?.() ?? String(e)}`);
         }

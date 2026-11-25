@@ -2,7 +2,6 @@
 use std::fs;
 
 use crate::config::get;
-use crate::config::set;
 use crate::StringWrapper;
 use crate::APP;
 #[cfg(target_os = "macos")]
@@ -153,9 +152,6 @@ pub fn config_window() {
         .unwrap();
 
     if !exists {
-        // Read the geometry written by the UI instead of a possibly stale
-        // in-memory copy of the config file.
-        crate::cmd::reload_store();
         let width = get("config_window_width_v2")
             .and_then(|v| v.as_i64())
             .unwrap_or(760)
@@ -207,20 +203,12 @@ fn translate_window() -> Window {
     }
     window.set_skip_taskbar(true).unwrap();
     // Get Translate Window Size
-    let width = match get("translate_window_width") {
-        Some(v) => v.as_i64().unwrap(),
-        None => {
-            set("translate_window_width", 350);
-            350
-        }
-    };
-    let height = match get("translate_window_height") {
-        Some(v) => v.as_i64().unwrap(),
-        None => {
-            set("translate_window_height", 420);
-            420
-        }
-    };
+    let width = get("translate_window_width")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(350);
+    let height = get("translate_window_height")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(420);
 
     let monitor = window.current_monitor().unwrap().unwrap();
     let dpi = monitor.scale_factor();
@@ -405,20 +393,12 @@ pub fn recognize_window() {
         window.emit("new_image", "").unwrap();
         return;
     }
-    let width = match get("recognize_window_width") {
-        Some(v) => v.as_i64().unwrap(),
-        None => {
-            set("recognize_window_width", 800);
-            800
-        }
-    };
-    let height = match get("recognize_window_height") {
-        Some(v) => v.as_i64().unwrap(),
-        None => {
-            set("recognize_window_height", 400);
-            400
-        }
-    };
+    let width = get("recognize_window_width")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(800);
+    let height = get("recognize_window_height")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(400);
     let monitor = window.current_monitor().unwrap().unwrap();
     let dpi = monitor.scale_factor();
     window

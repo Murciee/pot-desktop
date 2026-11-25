@@ -1,15 +1,11 @@
-use crate::config::{get, set};
+use crate::config::get;
 use crate::window::updater_window;
 use log::{info, warn};
 
 pub fn check_update(app_handle: tauri::AppHandle) {
-    let enable = match get("check_update") {
-        Some(v) => v.as_bool().unwrap(),
-        None => {
-            set("check_update", true);
-            true
-        }
-    };
+    let enable = get("check_update")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
     if enable {
         tauri::async_runtime::spawn(async move {
             match tauri::updater::builder(app_handle).check().await {

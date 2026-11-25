@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { extractReleaseNotes, formatUpdaterNotes } from '../.scripts/extract-release-notes.mjs';
 import { normalizeVersionLabel, stripLeadingVersionHeading } from '../src/utils/updater_notes.js';
@@ -77,4 +80,27 @@ test('normalizeVersionLabel and stripLeadingVersionHeading handle both 3.0.25 an
 
     const headingOnly = '## v3.0.26';
     assert.equal(stripLeadingVersionHeading(headingOnly, '3.0.26'), 'Release 3.0.26');
+});
+
+test('repository CHANGELOG extracts Chinese release notes for key versions', () => {
+    const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    const changelog = fs.readFileSync(path.join(repoRoot, 'CHANGELOG'), 'utf8');
+
+    const notes26 = extractReleaseNotes(changelog, '3.0.26');
+    assert.ok(notes26.includes('覆盖翻译'));
+    assert.ok(!notes26.includes('3.0.25'));
+
+    const notes22 = extractReleaseNotes(changelog, '3.0.22');
+    assert.ok(notes22.includes('WinRT OCR'));
+    assert.ok(!notes22.includes('3.0.21'));
+
+    const notes21 = extractReleaseNotes(changelog, '3.0.21');
+    assert.ok(notes21.includes('### 新增功能：'));
+    assert.ok(notes21.includes('### 优化改进：'));
+    assert.ok(!notes21.includes('3.0.20'));
+
+    const notes08 = extractReleaseNotes(changelog, '3.0.8');
+    assert.ok(notes08.includes('### 新增功能：'));
+    assert.ok(notes08.includes('覆盖翻译'));
+    assert.ok(!notes08.includes('3.0.7'));
 });

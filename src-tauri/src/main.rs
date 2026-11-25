@@ -113,28 +113,26 @@ fn main() {
                     .show()
                     .unwrap(),
             }
-            match get("proxy_enable") {
-                Some(v) => {
-                    if v.as_bool().unwrap() && get("proxy_host").map_or(false, |host| !host.as_str().unwrap().is_empty()) {
-                        let _ = set_proxy();
-                    }
-                }
-                None => {}
+            if get("proxy_enable")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+                && get("proxy_host")
+                    .and_then(|v| v.as_str().map(|s| !s.is_empty()))
+                    .unwrap_or(false)
+            {
+                let _ = set_proxy();
             }
             // Check Update
             check_update(app.handle());
-            if let Some(engine) = get("translate_detect_engine") {
-                if engine.as_str().unwrap() == "local" {
-                    init_lang_detect();
-                }
+            if get("translate_detect_engine")
+                .and_then(|v| v.as_str().map(|s| s == "local"))
+                .unwrap_or(false)
+            {
+                init_lang_detect();
             }
-            let clipboard_monitor = match get("clipboard_monitor") {
-                Some(v) => v.as_bool().unwrap(),
-                None => {
-                    set("clipboard_monitor", false);
-                    false
-                }
-            };
+            let clipboard_monitor = get("clipboard_monitor")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             app.manage(ClipboardMonitorEnableWrapper(Mutex::new(
                 clipboard_monitor.to_string(),
             )));
@@ -144,10 +142,12 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             reload_store,
             get_config_path,
+            save_config_store,
             get_text,
             cut_image,
             get_base64,
             get_overlay_base64,
+            get_ocr_image_payload,
             capture_overlay_region,
             copy_img,
             system_ocr,

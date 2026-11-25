@@ -13,6 +13,7 @@ import Recognize from './window/Recognize';
 import Updater from './window/Updater';
 import Config from './window/Config';
 import { useConfig } from './hooks';
+import { flushConfigSaves } from './utils/store';
 import './style.css';
 import './i18n';
 
@@ -74,36 +75,37 @@ export default function App() {
     const { i18n } = useTranslation();
 
     useEffect(() => {
-        if (devMode !== null && devMode) {
-            document.addEventListener('keydown', async (e) => {
-                let allowKeys = ['c', 'v', 'x', 'a', 'z', 'y'];
-                if (e.ctrlKey && !allowKeys.includes(e.key.toLowerCase())) {
-                    e.preventDefault();
+        const onKeyDown = async (e) => {
+            const allowKeys = ['c', 'v', 'x', 'a', 'z', 'y'];
+            if (e.ctrlKey && !allowKeys.includes(e.key.toLowerCase())) {
+                e.preventDefault();
+            }
+            if (devMode && e.key === 'F12') {
+                await invoke('open_devtools');
+            }
+            if (e.key.startsWith('F') && e.key.length > 1) {
+                e.preventDefault();
+            }
+            if (e.key === 'Escape') {
+                try {
+                    await flushConfigSaves();
+                } catch {
+                    // Closing still has to happen if flush fails.
                 }
-                if (e.key === 'F12') {
-                    await invoke('open_devtools');
+                if (appWindow.label === 'config') {
+                    try {
+                        await invoke('save_config_window_geometry_now');
+                    } catch {
+                        // Closing still has to happen if geometry save fails.
+                    }
                 }
-                if (e.key.startsWith('F') && e.key.length > 1) {
-                    e.preventDefault();
-                }
-                if (e.key === 'Escape') {
-                    await appWindow.close();
-                }
-            });
-        } else {
-            document.addEventListener('keydown', async (e) => {
-                let allowKeys = ['c', 'v', 'x', 'a', 'z', 'y'];
-                if (e.ctrlKey && !allowKeys.includes(e.key.toLowerCase())) {
-                    e.preventDefault();
-                }
-                if (e.key.startsWith('F') && e.key.length > 1) {
-                    e.preventDefault();
-                }
-                if (e.key === 'Escape') {
-                    await appWindow.close();
-                }
-            });
-        }
+                await appWindow.close();
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('keydown', onKeyDown);
+        };
     }, [devMode]);
 
     useEffect(() => {

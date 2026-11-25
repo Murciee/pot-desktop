@@ -1,18 +1,15 @@
 import { Store } from 'tauri-plugin-store-api';
 import { appConfigDir, join } from '@tauri-apps/api/path';
 import { listen } from '@tauri-apps/api/event';
-import { watch } from 'tauri-plugin-fs-watch-api';
 import { invoke } from '@tauri-apps/api';
 
 export let store = new Store();
 
-// Snapshot of the on-disk values, read once before the first render so that
-// useConfig can seed its state synchronously. Without it every page first
-// paints without its controls and then grows when the async reads resolve.
+// Snapshot of the in-memory store values, read once before the first render so
+// useConfig can seed its state synchronously without triggering layout shift.
 let configCache = new Map();
 let resolvedConfigPath = '';
 let saveChain = Promise.resolve();
-let pendingWrites = 0;
 const pendingSaves = new Map();
 const pendingTimers = new Map();
 
@@ -29,14 +26,11 @@ function clearPendingTimer(key) {
 }
 
 function enqueueSave(fn) {
-    pendingWrites += 1;
     const run = async () => {
         try {
             return await fn();
         } catch (err) {
             console.error('[store] failed to persist config:', err);
-        } finally {
-            pendingWrites = Math.max(0, pendingWrites - 1);
         }
     };
     saveChain = saveChain.then(run, run);
@@ -53,7 +47,29 @@ export function setConfigValue(key, value) {
     }
     return enqueueSave(async () => {
         await store.set(key, value);
-        await store.save();
+        await invoke('save_config_store');
+    });
+}
+
+export function setConfigValues(entries) {
+    const pairs = Object.entries(entries ?? {});
+    if (pairs.length === 0) {
+        return saveChain;
+    }
+    for (const [key, value] of pairs) {
+        clearPendingTimer(key);
+        pendingSaves.delete(key);
+        if (value === null || value === undefined) {
+            configCache.delete(key);
+        } else {
+            configCache.set(key, value);
+        }
+    }
+    return enqueueSave(async () => {
+        for (const [key, value] of pairs) {
+            await store.set(key, value);
+        }
+        await invoke('save_config_store');
     });
 }
 
@@ -64,7 +80,7 @@ export function deleteConfigKey(key) {
     return enqueueSave(async () => {
         if (await store.has(key)) {
             await store.delete(key);
-            await store.save();
+            await invoke('save_config_store');
         }
     });
 }
@@ -101,7 +117,7 @@ export function flushConfigSaves(keys) {
         for (const [key, value] of batch) {
             await store.set(key, value);
         }
-        await store.save();
+        await invoke('save_config_store');
     });
 }
 
@@ -115,14 +131,6 @@ export async function initStore() {
     }
     resolvedConfigPath = appConfigPath;
     store = new Store(appConfigPath);
-    // Load before any window renders: useConfig writes defaults for missing
-    // keys, and doing that before the on-disk state is loaded would overwrite
-    // the user's saved settings with the preset values.
-    try {
-        await store.load();
-    } catch {
-        // A missing config file is fine; defaults will be created on first write.
-    }
     try {
         configCache = new Map(await store.entries());
     } catch {
@@ -142,15 +150,14 @@ export async function initStore() {
             configCache.set(payload.key, payload.value);
         }
     });
-    const _ = await watch(appConfigPath, async () => {
-        if (pendingWrites > 0 || pendingSaves.size > 0) {
-            return;
-        }
+    await listen('config://reloaded', async () => {
         try {
-            await store.load();
             configCache = new Map(await store.entries());
         } catch {
-            // Ignore and keep the previous snapshot.
+            // Keep existing cache on transient error.
         }
+    });
+    await listen('config://flush-request', () => {
+        void flushConfigSaves();
     });
 }

@@ -20,22 +20,14 @@ pub fn update_tray(app_handle: tauri::AppHandle, mut language: String, mut copy_
     let tray_handle = app_handle.tray_handle();
 
     if language.is_empty() {
-        language = match get("app_language") {
-            Some(v) => v.as_str().unwrap().to_string(),
-            None => {
-                set("app_language", "en");
-                "en".to_string()
-            }
-        };
+        language = get("app_language")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "en".to_string());
     }
     if copy_mode.is_empty() {
-        copy_mode = match get("translate_auto_copy") {
-            Some(v) => v.as_str().unwrap().to_string(),
-            None => {
-                set("translate_auto_copy", "disable");
-                "disable".to_string()
-            }
-        };
+        copy_mode = get("translate_auto_copy")
+            .and_then(|v| v.as_str().map(|s| s.to_string()))
+            .unwrap_or_else(|| "disable".to_string());
     }
 
     info!(
@@ -63,13 +55,9 @@ pub fn update_tray(app_handle: tauri::AppHandle, mut language: String, mut copy_
         .set_tooltip(&format!("pot {}", app_handle.package_info().version))
         .unwrap();
 
-    let enable_clipboard_monitor = match get("clipboard_monitor") {
-        Some(v) => v.as_bool().unwrap(),
-        None => {
-            set("clipboard_monitor", false);
-            false
-        }
-    };
+    let enable_clipboard_monitor = get("clipboard_monitor")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     tray_handle
         .get_item("clipboard_monitor")
@@ -124,13 +112,9 @@ pub fn tray_event_handler<'a>(app: &'a AppHandle, event: SystemTrayEvent) {
 
 #[cfg(target_os = "windows")]
 fn on_tray_click() {
-    let event = match get("tray_click_event") {
-        Some(v) => v.as_str().unwrap().to_string(),
-        None => {
-            set("tray_click_event", "config");
-            "config".to_string()
-        }
-    };
+    let event = get("tray_click_event")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "config".to_string());
     match event.as_str() {
         "config" => config_window(),
         "translate" => input_translate(),
@@ -144,13 +128,9 @@ fn on_input_translate_click() {
     input_translate();
 }
 fn on_clipboard_monitor_click(app: &AppHandle) {
-    let enable_clipboard_monitor = match get("clipboard_monitor") {
-        Some(v) => v.as_bool().unwrap(),
-        None => {
-            set("clipboard_monitor", false);
-            false
-        }
-    };
+    let enable_clipboard_monitor = get("clipboard_monitor")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let current = !enable_clipboard_monitor;
     // Update Config File
     set("clipboard_monitor", current);
@@ -199,10 +179,12 @@ fn on_view_log_click(app: &AppHandle) {
     tauri::api::shell::open(&app.shell_scope(), log_path.to_str().unwrap(), None).unwrap();
 }
 fn on_restart_click(app: &AppHandle) {
+    let _ = crate::config::save_now();
     info!("============== Restart App ==============");
     app.restart();
 }
 fn on_quit_click(app: &AppHandle) {
+    let _ = crate::config::save_now();
     app.global_shortcut_manager().unregister_all().unwrap();
     info!("============== Quit App ==============");
     app.exit(0);

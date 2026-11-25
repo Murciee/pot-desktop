@@ -14,7 +14,7 @@ import SourceArea from './components/SourceArea';
 import TargetArea from './components/TargetArea';
 import { osType } from '../../utils/env';
 import { useConfig } from '../../hooks';
-import { store } from '../../utils/store';
+import { setConfigValues, store } from '../../utils/store';
 import { info } from 'tauri-plugin-log-api';
 import { error } from 'tauri-plugin-log-api';
 
@@ -123,9 +123,10 @@ export default function Translate() {
                         const monitor = await currentMonitor();
                         const factor = monitor.scaleFactor;
                         position = position.toLogical(factor);
-                        await store.set('translate_window_position_x', parseInt(position.x));
-                        await store.set('translate_window_position_y', parseInt(position.y));
-                        await store.save();
+                        await setConfigValues({
+                            translate_window_position_x: parseInt(position.x),
+                            translate_window_position_y: parseInt(position.y),
+                        });
                     }
                 }, 100);
             });
@@ -149,9 +150,10 @@ export default function Translate() {
                         const monitor = await currentMonitor();
                         const factor = monitor.scaleFactor;
                         size = size.toLogical(factor);
-                        await store.set('translate_window_height', parseInt(size.height));
-                        await store.set('translate_window_width', parseInt(size.width));
-                        await store.save();
+                        await setConfigValues({
+                            translate_window_height: parseInt(size.height),
+                            translate_window_width: parseInt(size.width),
+                        });
                     }
                 }, 100);
             });

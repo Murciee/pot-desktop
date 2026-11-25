@@ -7,7 +7,7 @@ import { error as logError } from 'tauri-plugin-log-api';
 import { MdPushPin } from 'react-icons/md';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { store } from '../../utils/store';
+import { setConfigValue } from '../../utils/store';
 import { useConfig } from '../../hooks';
 import { OverlayBlock } from './OverlayBlock';
 import { OverlayStatusBar } from './OverlayStatusBar';
@@ -93,10 +93,9 @@ export default function Overlay() {
             clearTimeout(fontSaveTimerRef.current);
             fontSaveTimerRef.current = null;
             const value = fontScaleRef.current;
-            Promise.resolve()
-                .then(() => store.set('overlay_font_scale', value))
-                .then(() => store.save())
-                .catch((e) => logError(`[overlay] save font scale failed: ${e?.toString?.() ?? String(e)}`));
+            setConfigValue('overlay_font_scale', value).catch((e) =>
+                logError(`[overlay] save font scale failed: ${e?.toString?.() ?? String(e)}`)
+            );
         }
     }, []);
 
@@ -219,10 +218,9 @@ export default function Overlay() {
         }
         fontSaveTimerRef.current = setTimeout(() => {
             fontSaveTimerRef.current = null;
-            Promise.resolve()
-                .then(() => store.set('overlay_font_scale', next))
-                .then(() => store.save())
-                .catch((e) => logError(`[overlay] save font scale failed: ${e?.toString?.() ?? String(e)}`));
+            setConfigValue('overlay_font_scale', next).catch((e) =>
+                logError(`[overlay] save font scale failed: ${e?.toString?.() ?? String(e)}`)
+            );
         }, 250);
     }, []);
 
@@ -241,10 +239,9 @@ export default function Overlay() {
         const current = overlayTheme || 'auto';
         const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
         setOverlayTheme(next);
-        Promise.resolve()
-            .then(() => store.set('overlay_theme', next))
-            .then(() => store.save())
-            .catch((e) => logError(`[overlay] save theme failed: ${e?.toString?.() ?? String(e)}`));
+        setConfigValue('overlay_theme', next).catch((e) =>
+            logError(`[overlay] save theme failed: ${e?.toString?.() ?? String(e)}`)
+        );
     }, [overlayTheme, setOverlayTheme]);
 
     const openSettings = useCallback(async () => {

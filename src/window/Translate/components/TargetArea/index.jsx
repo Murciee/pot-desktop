@@ -41,7 +41,7 @@ import {
     restoredSnapshotAtom,
 } from '../SourceArea';
 import { invoke_plugin } from '../../../../utils/invoke_plugin';
-import { store } from '../../../../utils/store';
+import { setConfigValue, setConfigValues } from '../../../../utils/store';
 import * as builtinServices from '../../../../services/translate';
 import * as builtinTtsServices from '../../../../services/tts';
 
@@ -168,8 +168,7 @@ export default function TargetArea(props) {
                     [currentTranslateServiceInstanceKey]: false,
                 };
                 setCollapseState(nextState);
-                store.set('translate_collapse_state', nextState);
-                store.save();
+                void setConfigValue('translate_collapse_state', nextState);
             }
             if (autoCopy === 'source' && !clipboardMonitor) {
                 writeText(sourceText).then(() => {
@@ -231,12 +230,13 @@ export default function TargetArea(props) {
         if (typeof value !== 'string' || sourceText.trim() === '') {
             return;
         }
-        await store.set('last_translate_source', sourceText.trim());
-        await store.set('last_translate_result', value);
-        await store.set('last_translate_service', currentTranslateServiceInstanceKey);
-        await store.set('last_translate_source_language', sourceLanguage);
-        await store.set('last_translate_target_language', targetLang);
-        await store.save();
+        await setConfigValues({
+            last_translate_source: sourceText.trim(),
+            last_translate_result: value,
+            last_translate_service: currentTranslateServiceInstanceKey,
+            last_translate_source_language: sourceLanguage,
+            last_translate_target_language: targetLang,
+        });
     };
 
     const toggleHide = () => {
@@ -250,8 +250,7 @@ export default function TargetArea(props) {
             [currentTranslateServiceInstanceKey]: next,
         };
         setCollapseState(nextState);
-        store.set('translate_collapse_state', nextState);
-        store.save();
+        void setConfigValue('translate_collapse_state', nextState);
     };
 
     function invokeOnce(fn) {

@@ -73,6 +73,74 @@ fn encode_file_base64(path: &std::path::Path) -> String {
     general_purpose::STANDARD.encode(&vec).replace("\r\n", "")
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrImagePayload {
+    pub base64: String,
+    pub mime_type: String,
+}
+
+fn save_rgba_png_fast(img: &image::RgbaImage, dest_path: &std::path::Path) -> Result<(), String> {
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::ImageEncoder;
+    use std::io::BufWriter;
+
+    let file = std::fs::File::create(dest_path).map_err(|e| e.to_string())?;
+    let writer = BufWriter::new(file);
+    let encoder = PngEncoder::new_with_quality(writer, CompressionType::Fast, FilterType::Sub);
+    encoder
+        .write_image(
+            img.as_raw(),
+            img.width(),
+            img.height(),
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|e| e.to_string())
+}
+
+fn encode_ocr_image_payload(
+    path: &std::path::Path,
+    max_dimension: u32,
+) -> Result<OcrImagePayload, String> {
+    use base64::{engine::general_purpose, Engine as _};
+    use image::codecs::jpeg::JpegEncoder;
+    use image::imageops::FilterType;
+    use image::ImageEncoder;
+
+    let raw_bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let img = image::load_from_memory(&raw_bytes).map_err(|e| e.to_string())?;
+    let max_dim = max_dimension.max(256);
+    let resized = img.width() > max_dim || img.height() > max_dim;
+    let processed = if resized {
+        img.resize(max_dim, max_dim, FilterType::Triangle)
+    } else {
+        img
+    };
+
+    let rgb = processed.to_rgb8();
+    let mut jpeg_bytes = Vec::new();
+    JpegEncoder::new_with_quality(&mut jpeg_bytes, 88)
+        .write_image(
+            rgb.as_raw(),
+            rgb.width(),
+            rgb.height(),
+            image::ExtendedColorType::Rgb8,
+        )
+        .map_err(|e| e.to_string())?;
+
+    if !resized && raw_bytes.len() <= jpeg_bytes.len() {
+        return Ok(OcrImagePayload {
+            base64: general_purpose::STANDARD.encode(&raw_bytes),
+            mime_type: "image/png".to_string(),
+        });
+    }
+
+    Ok(OcrImagePayload {
+        base64: general_purpose::STANDARD.encode(&jpeg_bytes),
+        mime_type: "image/jpeg".to_string(),
+    })
+}
+
 fn save_padded_crop(
     img: &image::RgbaImage,
     left: u32,
@@ -103,11 +171,32 @@ fn save_padded_crop(
     let cropped =
         image::imageops::crop_imm(img, padded_left, padded_top, padded_width, padded_height)
             .to_image();
-    cropped.save(dest_path).map_err(|e| e.to_string())?;
+    save_rgba_png_fast(&cropped, dest_path)?;
     Ok(CropInfo {
         padding_left: left - padded_left,
         padding_top: top - padded_top,
     })
+}
+
+#[tauri::command]
+pub fn get_ocr_image_payload(
+    app_handle: tauri::AppHandle,
+    image_file: Option<String>,
+    max_dimension: Option<u32>,
+) -> Result<OcrImagePayload, String> {
+    let target = match image_file.as_deref() {
+        Some("pot_overlay_cut.png") => "pot_overlay_cut.png",
+        _ => "pot_screenshot_cut.png",
+    };
+    let primary = cache_file_path(&app_handle, target)?;
+    let path = if primary.exists() {
+        primary
+    } else if target == "pot_overlay_cut.png" {
+        cache_file_path(&app_handle, "pot_screenshot_cut.png")?
+    } else {
+        return Err("OCR image file not found".to_string());
+    };
+    encode_ocr_image_payload(&path, max_dimension.unwrap_or(1600))
 }
 
 #[tauri::command]
@@ -250,9 +339,7 @@ pub fn cut_image_at(
     let img2 = img.sub_image(padded_left, padded_top, padded_width, padded_height);
     app_cache_dir_path.pop();
     app_cache_dir_path.push("pot_screenshot_cut.png");
-    img2.to_image()
-        .save(&app_cache_dir_path)
-        .map_err(|e| e.to_string())?;
+    save_rgba_png_fast(&img2.to_image(), &app_cache_dir_path)?;
     Ok(CropInfo {
         padding_left: left - padded_left,
         padding_top: top - padded_top,
@@ -431,5 +518,54 @@ pub fn open_devtools(window: tauri::Window) {
         window.open_devtools();
     } else {
         window.close_devtools();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{engine::general_purpose, Engine as _};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_image_path(name: &str) -> std::path::PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("pot_cmd_test_{}_{}_{}.png", name, std::process::id(), nanos))
+    }
+
+    #[test]
+    fn encode_ocr_image_payload_downscales_oversized_images_to_jpeg() {
+        let path = temp_image_path("large");
+        let img = image::RgbaImage::from_fn(2400, 1200, |x, y| {
+            image::Rgba([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8, 255])
+        });
+        save_rgba_png_fast(&img, &path).unwrap();
+
+        let payload = encode_ocr_image_payload(&path, 1600).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(payload.mime_type, "image/jpeg");
+        let decoded_bytes = general_purpose::STANDARD.decode(&payload.base64).unwrap();
+        let decoded = image::load_from_memory(&decoded_bytes).unwrap();
+        assert_eq!(decoded.width(), 1600);
+        assert_eq!(decoded.height(), 800);
+    }
+
+    #[test]
+    fn encode_ocr_image_payload_keeps_valid_small_png_or_jpeg() {
+        let path = temp_image_path("tiny");
+        let img = image::RgbaImage::from_pixel(64, 32, image::Rgba([255, 255, 255, 255]));
+        save_rgba_png_fast(&img, &path).unwrap();
+
+        let payload = encode_ocr_image_payload(&path, 1600).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(payload.mime_type == "image/png" || payload.mime_type == "image/jpeg");
+        let decoded_bytes = general_purpose::STANDARD.decode(&payload.base64).unwrap();
+        let decoded = image::load_from_memory(&decoded_bytes).unwrap();
+        assert_eq!(decoded.width(), 64);
+        assert_eq!(decoded.height(), 32);
     }
 }

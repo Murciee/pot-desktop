@@ -33,7 +33,6 @@ export const useConfig = (key, defaultValue, options = {}) => {
                 store.get(key).then((stored) => {
                     if (stored === null) {
                         setPropertyState(defaultValue);
-                        void setConfigValue(key, defaultValue);
                     } else {
                         setPropertyState(stored);
                     }
@@ -46,12 +45,17 @@ export const useConfig = (key, defaultValue, options = {}) => {
     const setProperty = useCallback(
         (v, forceSync = false) => {
             setPropertyState(v);
-            const isSync = forceSync || sync;
-            if (isSync) {
+            if (forceSync) {
+                void setConfigValue(key, v);
+                const eventKey = key.replaceAll('.', '_').replaceAll('@', ':');
+                emit(`${eventKey}_changed`, v);
+                return;
+            }
+            if (sync) {
                 syncToStore(v);
             }
         },
-        [sync, syncToStore]
+        [key, sync, syncToStore]
     );
 
     // 初始化
@@ -61,9 +65,15 @@ export const useConfig = (key, defaultValue, options = {}) => {
         const unlisten = listen(`${eventKey}_changed`, (e) => {
             syncToState(e.payload);
         });
+        const unlistenReload = listen('config://reloaded', () => {
+            syncToState(null);
+        });
         return () => {
             void flushConfigSaves([key]);
             unlisten.then((f) => {
+                f();
+            });
+            unlistenReload.then((f) => {
                 f();
             });
         };

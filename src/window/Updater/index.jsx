@@ -6,11 +6,13 @@ import { appWindow } from '@tauri-apps/api/window';
 import { relaunch } from '@tauri-apps/api/process';
 import toast, { Toaster } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
-import { listen } from '@tauri-apps/api/event';
+import { listen, emit } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/tauri';
 import ReactMarkdown from 'react-markdown';
 
 import { useConfig, useToastStyle } from '../../hooks';
 import { appVersion, osType } from '../../utils/env';
+import { flushConfigSaves } from '../../utils/store';
 import { normalizeVersionLabel, stripLeadingVersionHeading } from '../../utils/updater_notes';
 
 export default function Updater() {
@@ -222,7 +224,23 @@ export default function Updater() {
                     isLoading={downloaded !== 0}
                     isDisabled={checking || !hasUpdate || downloaded !== 0}
                     color='primary'
-                    onPress={() => {
+                    onPress={async () => {
+                        try {
+                            await emit('config://flush-request');
+                        } catch {
+                            // Continue update even if event broadcast fails.
+                        }
+                        try {
+                            await flushConfigSaves();
+                        } catch {
+                            // Continue update even if flush fails.
+                        }
+                        await new Promise((resolve) => setTimeout(resolve, 80));
+                        try {
+                            await invoke('save_config_store');
+                        } catch {
+                            // Continue update even if save fails.
+                        }
                         installUpdate().then(
                             () => {
                                 toast.success(t('updater.installed'), { style: toastStyle, duration: 10000 });

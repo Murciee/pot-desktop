@@ -1,191 +1,202 @@
+## 3.0.27 (2026-11-25)
+
+### 优化改进：
+
+-   优化 OpenAI 兼容识别与翻译服务的“关闭思考”参数兼容（自动尝试 `reasoning_effort`、`enable_thinking`、`thinking` 并对 400/422 接口报错自动回退缓存），压缩 OCR 上传图像体积并并行执行覆盖区图像分析，显著提升识别速度。
+-   将所有历史版本的更新日志与 Release 说明统一整理为中文。
+
+### 问题修复：
+
+-   修复更新或重启后设置丢失/被重置的问题：后端配置改用临时文件原子写入并维护 `config.json.bak` 自动恢复，移除多窗口竞争重载与读取默认回写，并在关闭窗口、退出、重启及软件内自动更新前强制刷盘。
+
 ## 3.0.26 (2026-11-25)
 
-### Bugs fixed:
+### 问题修复：
 
--   Remove the Windows `SM_CXMIN`/`SM_CYMIN` minimum window size clamp on borderless overlay translation windows via a `WM_WINDOWPOSCHANGING` subclass and clamp normalized OCR boxes inside the selected region so small selections no longer expand.
--   Display current and target version numbers in the in-app updater window and prepend version headers to updater manifests for older clients.
+-   通过 `WM_WINDOWPOSCHANGING` 窗口子类化移除 Windows 系统 `SM_CXMIN`/`SM_CYMIN` 对无边框覆盖翻译窗口的最小尺寸限制，并将归一化后的 OCR 文本框裁剪在选区范围内，使小选区覆盖翻译窗口不再被拉大。
+-   在软件内自动更新窗口中显示当前版本与目标版本号，并为旧版本客户端在更新清单中自动补全版本标题。
 
 ## 3.0.25 (2026-11-24)
 
-### Bugs fixed:
+### 问题修复：
 
--   Fix overlay translation font size, stroke weight, foreground contrast, and vertical/horizontal text direction detection across both WinRT and plain-text OCR engines.
--   Fix Windows high-DPI screen capture and borderless overlay window bounds so the overlay matches the exact selected region without oversizing.
--   Extract only the current tag's section from `CHANGELOG` when publishing GitHub Releases and updater manifests.
+-   修复覆盖翻译在 Windows 系统 OCR 与纯文本 OCR 引擎下的字号匹配、字重、前景/背景对比度以及横竖排方向识别问题。
+-   修复 Windows 高 DPI 屏幕截图与无边框覆盖翻译窗口尺寸计算，使覆盖区域与实际框选范围精确一致。
+-   发布 GitHub Release 与自动更新清单时仅提取当前版本对应的更新日志内容，避免展示全部历史版本。
 
 ## 3.0.24 (2026-11-23)
 
-### Bugs fixed:
+### 问题修复：
 
--   Fix settings reverting or disappearing after updates and restarts by unifying Rust and frontend access onto a single `tauri-plugin-store` instance instead of two competing stores.
--   Keep built-in `openai_ocr` recognition services in `recognize_service_list` on startup instead of stripping them during service validation.
--   Serialize and flush pending frontend config writes before closing windows or switching settings pages, and remove a redundant `store.load()` race on mount.
+-   将 Rust 后端与前端配置统一读写至同一个 `tauri-plugin-store` 实例，修复更新或重启后设置被重置或丢失的问题。
+-   启动校验服务列表时保留内置 `openai_ocr` 识别服务，避免在启动阶段被误清理。
+-   串行化并在关闭窗口或切换设置页前强制刷盘挂起的配置写入，同时移除组件挂载时的冗余 `store.load()` 竞争调用。
 
 ## 3.0.23 (2026-11-23)
 
-### Bugs fixed:
+### 问题修复：
 
--   Fix `ReferenceError: config is not defined` when opening the Translate settings page caused by an unquoted overlay theme i18n key.
+-   修复因覆盖翻译主题 i18n 键名缺少引号导致打开翻译设置页报错 `ReferenceError: config is not defined` 的问题。
 
-### Improvements:
+### 优化改进：
 
--   Build and publish only the Windows x64 installer and updater bundle in the Windows release workflow.
+-   Windows 发布工作流改为仅构建并发布 Windows x64 安装包及自动更新包。
 
 ## 3.0.22 (2026-11-23)
 
-### New features:
+### 新增功能：
 
--   Overlay translation: automatically scale each block's font size to match the original OCR text size instead of capping at the default app font size, while keeping multi-line paragraphs proportional.
--   Overlay translation: add adaptive light/dark theme from sampled screen background colors, vertical text orientation support, and batch translation for LLM/batch-friendly services.
+-   覆盖翻译：根据 OCR 原文字号自动等比缩放每个文本块的译文字号（不再被默认应用字号上限截断），同时保持多行段落的排版比例。
+-   覆盖翻译：支持采样屏幕背景色自动切换浅色/深色主题、竖排文本方向排版，以及针对大模型等批量友好服务的批量并发翻译。
 
-### Improvements:
+### 优化改进：
 
--   Use single-pass in-memory WinRT OCR for overlay recognition and reclaim border/padding space inside tight OCR text boxes for better readability.
--   Add a unified centered loading indicator and expand overlay layout/OCR unit test coverage.
+-   Windows 覆盖翻译改用单次内存 WinRT OCR 识别，并适当回收紧凑文本框的内边距空间以提升可读性。
+-   统一居中加载动画指示器，并补充覆盖翻译布局与 OCR 单元测试。
 
-### Bugs fixed:
+### 问题修复：
 
--   Fix Windows mouse hook lag/races, WebView2 reselect deadlock, font shrink-back on manual scaling, and overlay resize/drag geometry sync.
+-   修复 Windows 鼠标钩子卡顿与竞态、WebView2 重选区死锁、手动调字号后回弹以及拖拽/缩放覆盖窗口时的几何状态同步问题。
 
 ## 3.0.21 (2026-11-22)
 
-### New features:
+### 新增功能：
 
--   Overlay translation: copy the translation, the original text, or both, and switch between original and translated text.
--   Overlay translation: pin the overlay so outside clicks no longer close it; a pin badge marks the locked pinned state.
--   Overlay translation: show failures in an inline status bar with retry failed blocks, switch channel, copy error, retry OCR, reselect, and open settings.
--   Overlay translation: remember the font size, and keep the channel chosen with "switch channel" for later retries and overlays.
+-   覆盖翻译：支持复制译文、复制原文或复制全部内容，并支持切换显示原文或译文。
+-   覆盖翻译：支持钉住（固定）覆盖窗口，固定后点击窗口外部不再自动关闭，并显示图钉锁定标记。
+-   覆盖翻译：在覆盖栏内直接展示翻译失败状态，提供重试失败项、切换翻译渠道、复制错误信息、重新识别、重新框选和打开设置入口。
+-   覆盖翻译：自动记忆手动调整的字号，并记住“切换渠道”后选用的翻译服务供后续重试与覆盖翻译使用。
 
-### Improvements:
+### 优化改进：
 
--   Place the overlay toolbar above or below the selection instead of over the first translated line; use an inset toolbar only when the selection fills the screen.
--   Reload overlay service, model, and OCR settings before refresh or retry, and keep the overlay pinned while the settings window is open.
--   Ignore outside clicks while the overlay is hidden for a refresh, and recover from failed show calls.
--   Make the overlay status bar scrollable on narrow selections, keep the toolbar close button reachable, and let the OCR error card pass clicks through to the toolbar.
+-   将覆盖工具栏放置在框选区域上方或下方，避免遮挡首行译文；仅在选区占满屏幕时内嵌显示。
+-   刷新或重试前重新加载覆盖翻译的服务、模型与 OCR 设置，并在打开设置窗口期间自动保持覆盖窗口固定。
+-   刷新截图隐藏窗口期间忽略外部点击关闭，并在显示窗口失败时自动恢复。
+-   在窄选区下支持横向滚动覆盖状态栏，确保工具栏关闭按钮始终可点击，并允许穿透点击 OCR 错误卡片操作工具栏。
 
 ## 3.0.20 (2026-11-20)
 
-### New features:
+### 新增功能：
 
--   Add show/hide buttons for API keys in service configuration, including plugin fields.
+-   在服务配置（包括插件配置字段）中为 API Key / 密钥输入框添加显示/隐藏切换按钮。
 
-### Bugs fixed:
+### 问题修复：
 
--   Remember the settings window size and position across restarts, including the first open after launch.
+-   在重启后（含启动后的首次打开）正确记住并恢复偏好设置窗口的大小与位置。
 
 ## 3.0.19 (2026-11-20)
 
-### New features:
+### 新增功能：
 
--   Add an OpenAI-compatible recognition service with address presets, model fetching and a disable-thinking option.
+-   新增内置 OpenAI 兼容文字识别服务，支持常用接口地址预设、在线获取模型列表及“关闭思考”开关。
 
-### Improvements:
+### 优化改进：
 
--   List the OpenAI-compatible service first when adding a translation or recognition service.
+-   添加翻译服务或文字识别服务时，将 OpenAI 兼容服务置顶显示。
 
 ## 3.0.18 (2026-11-19)
 
-### Bugs fixed:
+### 问题修复：
 
--   Open the settings window on Tauri's main thread, so opening it from the HTTP API no longer deadlocks.
--   Rework the settings layout to right-aligned controls; proxy, hotkey, backup and plugin fields are no longer clipped or wrapped.
--   Default the settings window to 760x560, keep it from being resized narrower than 760, and remember its size and position.
--   Read saved configuration before the first render, prefetch the autostart state and render font dropdowns before the font list arrives, so switching pages no longer shifts the layout.
--   Start every settings page at the top instead of keeping the previous page's scroll offset.
+-   在 Tauri 主线程中打开偏好设置窗口，修复通过 HTTP API 打开设置窗口导致的死锁问题。
+-   重构设置页布局为控件右对齐，修复代理、快捷键、备份及插件表单项被裁剪或异常换行的问题。
+-   偏好设置窗口默认尺寸调整为 760x560，限制最小宽度不低于 760，并记住窗口尺寸与位置。
+-   首次渲染前预先读取本地配置、预获取开机自启状态并在字体列表加载前先渲染字体下拉框，消除切换设置页时的布局跳动。
+-   每次切换设置页时自动滚动回顶部，不再保留上一页的滚动位置。
 
 ## 3.0.17 (2026-11-19)
 
-### New features:
+### 新增功能：
 
--   Add a "Disable thinking" option to OpenAI-compatible translation providers.
+-   为 OpenAI 兼容翻译服务新增“关闭思考”选项。
 
-### Bugs fixed:
+### 问题修复：
 
--   Align the network proxy host/port and username/password fields.
--   Unify the widths of overlay translation controls and place hints under their fields.
--   Let hotkey inputs fill the available row instead of leaving the right side empty.
--   Load saved configuration before writing defaults, and remember the settings window size and position.
--   Show full-width inputs in plugin/service configuration dialogs and enlarge the dialog.
+-   对齐网络代理的主机/端口以及用户名/密码输入框布局。
+-   统一覆盖翻译各项设置控件宽度，并将说明文字放到对应控件下方。
+-   让快捷键输入框占满整行可用宽度，避免右侧留白。
+-   在写入默认配置前先加载已保存的本地配置，并记住偏好设置窗口的尺寸与位置。
+-   扩大服务/插件配置弹窗尺寸并让内部输入框铺满宽度。
 
 ## 3.0.16 (2026-11-19)
 
-### Bugs fixed:
+### 问题修复：
 
--   Remove the white square corners outside the rounded configuration window on Windows.
+-   移除 Windows 偏好设置圆角窗口四角外侧的白色直角边框。
 
 ## 3.0.15 (2026-11-18)
 
-### Notes:
+### 说明：
 
--   Start a new updater signing key. Existing installations must install 3.0.15 manually once before automatic updates resume.
+-   本版本起更换新的自动更新签名密钥。现有旧版本用户需先手动下载安装一次 3.0.15，之后即可恢复软件内自动更新。
 
 ## 3.0.14 (2026-11-18)
 
-### Bugs fixed:
+### 问题修复：
 
--   Close Windows overlay translation only when clicking outside the overlay, instead of when the window loses focus.
--   Show translating and failed states in the overlay, time out unresponsive translation channels, and report the channel, error details and troubleshooting steps.
--   Do not cache empty translation results, so refreshing the overlay requests them again.
+-   修复 Windows 覆盖翻译在窗口失焦时即关闭的问题，改为仅在点击覆盖区域外部时关闭。
+-   在覆盖翻译界面中展示“翻译中”与失败状态，为无响应的翻译渠道增加超时控制，并汇报具体渠道、错误详情及排查建议。
+-   不对空翻译结果进行缓存，确保点击刷新时重新请求翻译。
 
 ## 3.0.13 (2026-11-18)
 
-### New features:
+### 新增功能：
 
--   Allow choosing the OCR engine used by Windows overlay translation.
--   Keep the overlay window at the selected region size and fit translated text within each OCR box.
--   Use a single selection-sized translation block when the chosen OCR engine does not return text boxes.
+-   支持在设置中自由选择 Windows 覆盖翻译所使用的 OCR 识别引擎。
+-   保持覆盖窗口尺寸与选区一致，并将每段译文自适应缩放至对应 OCR 文本框内。
+-   当所选 OCR 引擎仅返回纯文本而不返回坐标框时，使用覆盖整个选区的单个文本块展示译文。
 
 ## 3.0.12 (2026-11-18)
 
-### Bugs fixed:
+### 问题修复：
 
--   Fix the translate window rendering an empty transparent frame because `TargetArea` crashed on an undefined `useAtom`.
--   Show a readable message instead of a blank window when a window fails to render.
--   Keep loading the remaining plugins when one plugin fails to load.
+-   修复因 `TargetArea` 引用未定义的 `useAtom` 导致翻译窗口渲染为空白透明边框的问题。
+-   窗口渲染发生异常时显示可读的错误信息页面，而非空白窗口。
+-   单个插件加载失败时不再中断后续其余插件的加载。
 
 ## 3.0.11 (2026-11-18)
 
-### Bugs fixed:
+### 问题修复：
 
--   Point the About page GitHub, issue and discussion links at this repository.
+-   将“关于”页面中的 GitHub、Issue 与 Discussion 链接更新指向当前仓库。
 
 ## 3.0.10 (2026-11-18)
 
-### Bugs fixed:
+### 问题修复：
 
--   Show the translate window from the backend so a missed frontend event can no longer leave it hidden.
--   Keep the translate window inside the current monitor when the saved position is off-screen.
--   Keep the screenshot overlay open on an accidental click instead of closing it as a too-small selection.
+-   改为由 Rust 后端直接显示翻译窗口，避免因前端漏接事件导致窗口一直处于隐藏状态。
+-   当记录的翻译窗口位置超出屏幕边界时，自动将其约束在当前显示器范围内。
+-   误触单击截图遮罩时保持截图界面打开，不再因选区过小而直接退出。
 
 ## 3.0.9 (2026-11-17)
 
-### Bugs fixed:
+### 问题修复：
 
--   Register every global shortcut even when one is already taken by another application.
--   Skip clipboard monitoring for empty or overly long text.
--   Skip the translate window when there is no text to translate.
+-   注册全局快捷键时，即使某个快捷键已被其他应用占用，其余快捷键仍正常完成注册。
+-   启用剪贴板监听时跳过空文本或超长文本。
+-   无待翻译文本时跳过打开翻译窗口。
 
 ## 3.0.8 (2026-11-17)
 
-### New features:
+### 新增功能：
 
--   Add Windows overlay translation with OCR-backed text replacement.
--   Add OpenAI-compatible endpoint presets and model selection for overlay translation.
+-   新增 Windows 屏幕覆盖翻译功能，支持基于 OCR 识别框的原位译文替换显示。
+-   为翻译及覆盖翻译新增 OpenAI 兼容接口预设与模型选择功能。
 
-### Bugs fixed:
+### 问题修复：
 
--   Improve screenshot translation capture and window activation.
--   Prevent long overlay translations and adjacent text boxes from being clipped.
--   Improve configuration window resizing, shortcut field sizing, and control borders.
--   Because this release starts a new updater signing key, existing installations must install 3.0.8 manually once before automatic updates resume.
+-   优化截图翻译抓图与窗口激活逻辑。
+-   防止覆盖翻译长文本以及相邻文本框之间出现内容裁剪遮挡。
+-   改进偏好设置窗口缩放、快捷键输入框宽度及控件边框样式。
+-   因本版本更换了新的自动更新签名密钥，现有用户需手动下载安装一次 3.0.8 后才可继续使用自动更新。
 
 ## 3.0.7 (2025-5-10)
 
-### New feature:
+### 新增功能：
 
--   signed macOS app
+-   发布经过签名的 macOS 应用包。
 
-### Bugs fixed:
+### 问题修复：
 
--   fix screenshot on macOS
--   rm tray click event on macOS
+-   修复 macOS 下的截图功能异常。
+-   移除 macOS 下的系统托盘点击事件。

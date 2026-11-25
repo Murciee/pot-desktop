@@ -95,6 +95,7 @@ export default function TextArea(props) {
                             builtinServices[getServiceName(currentServiceInstanceKey)].Language[language],
                             {
                                 config: instanceConfig,
+                                imageFile: 'pot_screenshot_cut.png',
                             }
                         )
                         .then(

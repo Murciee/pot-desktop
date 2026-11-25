@@ -8,7 +8,7 @@ import WindowControl from '../../components/WindowControl';
 import SideBar from './components/SideBar';
 import { osType } from '../../utils/env';
 import { useConfig } from '../../hooks';
-import { store } from '../../utils/store';
+import { setConfigValues } from '../../utils/store';
 import routes from './routes';
 import './style.css';
 
@@ -46,11 +46,12 @@ export default function Config() {
                 const factor = await appWindow.scaleFactor();
                 const size = (await appWindow.outerSize()).toLogical(factor);
                 const position = (await appWindow.outerPosition()).toLogical(factor);
-                await store.set('config_window_width_v2', Math.round(size.width));
-                await store.set('config_window_height_v2', Math.round(size.height));
-                await store.set('config_window_x', Math.round(position.x));
-                await store.set('config_window_y', Math.round(position.y));
-                await store.save();
+                await setConfigValues({
+                    config_window_width_v2: Math.round(size.width),
+                    config_window_height_v2: Math.round(size.height),
+                    config_window_x: Math.round(position.x),
+                    config_window_y: Math.round(position.y),
+                });
             } catch {
                 // Ignore and keep the previous values.
             }

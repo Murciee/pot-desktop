@@ -6,20 +6,15 @@ import { getServiceName, whetherPluginService } from './service_instance';
 import { store } from './store';
 
 const MAX_CACHE_ENTRIES = 500;
-let storeReady = null;
 const cache = new Map();
 const pluginInfoCache = new Map();
 
 function ensureStore() {
-    if (!storeReady) {
-        storeReady = store.load();
-    }
-    return storeReady;
+    return Promise.resolve();
 }
 
 export async function reloadTranslateStore() {
-    storeReady = store.load();
-    return storeReady;
+    return Promise.resolve();
 }
 
 function hashString(input) {

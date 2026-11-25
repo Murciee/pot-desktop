@@ -463,43 +463,32 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
                     if (isStale()) {
                         return;
                     }
-                    const rawW = Number(analysis?.w);
-                    const rawH = Number(analysis?.h);
-                    const useAnalysis =
-                        analysis && Number.isFinite(rawW) && rawW > 0 && Number.isFinite(rawH) && rawH > 0;
                     info(
-                        useAnalysis
+                        analysis
                             ? `[overlay] OCR returned plain text, image analysis detected ${
                                   analysis.vertical ? 'vertical' : 'horizontal'
                               } ${analysis.lineCount} lines`
                             : '[overlay] OCR returned plain text, using a single block for the selection'
                     );
+                    // A plain-text engine cannot place the individual lines, so the
+                    // translation must cover the whole selected region (otherwise the
+                    // overlay ends up visibly smaller than the box the user drew).
+                    // The image analysis is only used to match font size, direction
+                    // and colours.
                     trimmed = [
-                        useAnalysis
-                            ? {
-                                  x: Number(analysis.x) || 0,
-                                  y: Number(analysis.y) || 0,
-                                  w: rawW,
-                                  h: rawH,
-                                  text: plainText,
-                                  vertical: Boolean(analysis.vertical),
-                                  lineSize: analysis.lineSize ?? null,
-                                  lineCount: analysis.lineCount || 1,
-                                  bgColor: analysis.bgColor ?? null,
-                                  fgColor: analysis.fgColor ?? null,
-                                  fontWeight: analysis.fontWeight || 400,
-                              }
-                            : {
-                                  x: 0,
-                                  y: 0,
-                                  w: overlayState.width,
-                                  h: overlayState.height,
-                                  text: plainText,
-                                  vertical: false,
-                                  bgColor: null,
-                                  fgColor: null,
-                                  fontWeight: 400,
-                              },
+                        {
+                            x: 0,
+                            y: 0,
+                            w: overlayState.width,
+                            h: overlayState.height,
+                            text: plainText,
+                            vertical: Boolean(analysis?.vertical),
+                            lineSize: analysis?.lineSize ?? null,
+                            lineCount: analysis?.lineCount || 1,
+                            bgColor: analysis?.bgColor ?? null,
+                            fgColor: analysis?.fgColor ?? null,
+                            fontWeight: analysis?.fontWeight || 400,
+                        },
                     ];
                 } else {
                     info(`[overlay] OCR returned ${boxes.length} line boxes`);

@@ -34,8 +34,6 @@ export default function Overlay() {
 
     const [locked, setLocked] = useState(true);
     const [pinned, setPinned] = useState(false);
-    const [toolbarLayout, setToolbarLayout] = useState(null);
-    const [userResized, setUserResized] = useState({ width: false, height: false });
     const [fontScale, setFontScale] = useState(1);
     const [displayMode, setDisplayMode] = useState('translation');
     const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -75,11 +73,9 @@ export default function Overlay() {
     const refreshRef = useRef(refresh);
     const copyTextRef = useRef(copyText);
     const showNoticeRef = useRef(showNotice);
-    const stateRef = useRef(state);
     refreshRef.current = refresh;
     copyTextRef.current = copyText;
     showNoticeRef.current = showNotice;
-    stateRef.current = state;
 
     useEffect(() => {
         if (!localFontEditedRef.current && overlayFontScale !== null) {
@@ -116,52 +112,25 @@ export default function Overlay() {
 
     useEffect(() => {
         setViewport({ width: window.innerWidth, height: window.innerHeight });
-    }, [state, toolbarLayout]);
+    }, [state]);
 
     useEffect(() => {
         let cancelled = false;
-        setUserResized({ width: false, height: false });
         const syncLockAndToolbar = async () => {
             try {
                 await appWindow.setIgnoreCursorEvents(locked);
             } catch {
-                // Continue syncing toolbar layout even if cursor ignore fails.
+                // Keep syncing the toolbar state even if cursor ignore fails.
             }
             if (cancelled) {
                 return;
             }
             try {
-                const layout = await invoke('set_overlay_toolbar', { visible: !locked });
-                if (!cancelled) {
-                    setToolbarLayout(layout);
-                }
+                // The toolbar is rendered inside the existing window; this call
+                // only persists drag/resize geometry when the overlay is locked.
+                await invoke('set_overlay_toolbar', { visible: !locked });
             } catch (e) {
-                logError(`[overlay] toolbar layout failed: ${e?.toString?.() ?? String(e)}`);
-                if (!cancelled) {
-                    const overlayState = stateRef.current;
-                    const dpr = overlayState?.dpr > 0 ? overlayState.dpr : 1;
-                    const width = overlayState ? overlayState.width / dpr : window.innerWidth;
-                    const height = overlayState ? overlayState.height / dpr : window.innerHeight;
-                    setToolbarLayout(
-                        locked
-                            ? {
-                                  placement: 'none',
-                                  offsetTop: 0,
-                                  offsetLeft: 0,
-                                  contentWidth: width,
-                                  contentHeight: height,
-                                  dpr,
-                              }
-                            : {
-                                  placement: 'inside',
-                                  offsetTop: TOOLBAR_HEIGHT,
-                                  offsetLeft: 0,
-                                  contentWidth: width,
-                                  contentHeight: Math.max(1, height - TOOLBAR_HEIGHT),
-                                  dpr,
-                              }
-                    );
-                }
+                logError(`[overlay] toolbar sync failed: ${e?.toString?.() ?? String(e)}`);
             }
             if (!cancelled && !locked) {
                 appWindow.setFocus().catch(() => {});
@@ -196,7 +165,6 @@ export default function Overlay() {
     useEffect(() => {
         let unlistenToggle = null;
         let unlistenRefresh = null;
-        let unlistenUserResized = null;
 
         void init();
 
@@ -210,20 +178,10 @@ export default function Overlay() {
         }).then((f) => {
             unlistenRefresh = f;
         });
-        listen('overlay_user_resized', (event) => {
-            const payload = event?.payload;
-            setUserResized({
-                width: Boolean(payload?.width),
-                height: Boolean(payload?.height),
-            });
-        }).then((f) => {
-            unlistenUserResized = f;
-        });
 
         return () => {
             unlistenToggle?.();
             unlistenRefresh?.();
-            unlistenUserResized?.();
         };
     }, [init]);
 
@@ -301,11 +259,9 @@ export default function Overlay() {
         contentWidth,
         contentHeight,
     } = computeOverlayContentRect({
-        state,
-        toolbarLayout,
         locked,
         viewport,
-        userResized,
+        placement: state?.toolbarPlacement || 'inside',
         toolbarHeight: TOOLBAR_HEIGHT,
     });
     const statusBottom = toolbarAtBottom ? TOOLBAR_HEIGHT : 0;
@@ -368,7 +324,7 @@ export default function Overlay() {
                 <div
                     style={{
                         position: 'absolute',
-                        top: 4,
+                        top: contentTop + 4,
                         right: 6,
                         zIndex: 9,
                         pointerEvents: 'none',

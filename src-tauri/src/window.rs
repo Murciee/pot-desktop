@@ -548,6 +548,9 @@ pub struct OverlayState {
     pub monitor_y: i32,
     pub padding_left: u32,
     pub padding_top: u32,
+    /// Where the overlay toolbar strip lives relative to the selected region:
+    /// "top", "bottom" or "inside". Fixed for the lifetime of the window.
+    pub toolbar_placement: String,
     pub ocr_lang: String,
     pub service: String,
     pub model: String,
@@ -887,6 +890,28 @@ impl Drop for OverlayOpeningGuard {
     }
 }
 
+/// Reserve a 32 CSS-px strip for the toolbar: above the selection when it fits,
+/// otherwise below it, otherwise overlay the selection itself ("inside").
+fn pick_overlay_toolbar_placement(
+    screen_y: i32,
+    select_h: u32,
+    monitor_y: i32,
+    monitor_h: u32,
+    dpr: f64,
+) -> &'static str {
+    let dpr = if dpr > 0.0 { dpr } else { 1.0 };
+    let strip = (32.0 * dpr).round() as i32;
+    if screen_y - strip >= monitor_y {
+        "top"
+    } else if screen_y.saturating_add(select_h as i32).saturating_add(strip)
+        <= monitor_y.saturating_add(monitor_h as i32)
+    {
+        "bottom"
+    } else {
+        "inside"
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn open_overlay_screenshot() {
     let _guard = OverlayOpeningGuard;
@@ -911,6 +936,10 @@ fn open_overlay_screenshot() {
                 .as_ref()
                 .map(|m| *m.position())
                 .unwrap_or(tauri::PhysicalPosition::new(rect.screen_x - rect.left as i32, rect.screen_y - rect.top as i32));
+            let monitor_size = monitor
+                .as_ref()
+                .map(|m| *m.size())
+                .unwrap_or(tauri::PhysicalSize::new(rect.width, rect.height));
 
             let state = OverlayState {
                 left: rect.left,
@@ -924,6 +953,14 @@ fn open_overlay_screenshot() {
                 monitor_y: monitor_position.y,
                 padding_left: rect.padding_left,
                 padding_top: rect.padding_top,
+                toolbar_placement: pick_overlay_toolbar_placement(
+                    rect.screen_y,
+                    rect.height,
+                    monitor_position.y,
+                    monitor_size.height,
+                    rect.dpr,
+                )
+                .to_string(),
                 ocr_lang: overlay_ocr_lang(),
                 service: overlay_service_instance(),
                 model: overlay_model(),
@@ -1357,6 +1394,70 @@ fn set_overlay_window_rect(
         .map_err(|e| e.to_string())
 }
 
+/// Physical height of the toolbar strip (32 CSS px).
+fn overlay_strip_px(dpr: f64) -> u32 {
+    let dpr = if dpr > 0.0 { dpr } else { 1.0 };
+    (32.0 * dpr).round().max(1.0) as u32
+}
+
+/// Layout for the toolbar strip reserved at window creation.
+fn build_overlay_toolbar_layout(state: &OverlayState) -> OverlayToolbarLayout {
+    let dpr = if state.dpr > 0.0 { state.dpr } else { 1.0 };
+    let strip = overlay_strip_px(dpr);
+    let (placement, offset_top, window_height) = match state.toolbar_placement.as_str() {
+        "top" => ("top", 32.0, state.height + strip),
+        "bottom" => ("bottom", 0.0, state.height + strip),
+        _ => ("inside", 0.0, state.height),
+    };
+    OverlayToolbarLayout {
+        placement: placement.to_string(),
+        offset_top,
+        offset_left: 0.0,
+        content_width: state.width as f64 / dpr,
+        content_height: state.height as f64 / dpr,
+        window_width: state.width,
+        window_height,
+        dpr,
+    }
+}
+
+/// The native window rect implied by the recorded selection plus its toolbar strip.
+fn overlay_window_rect_for(
+    state: &OverlayState,
+    layout: &OverlayToolbarLayout,
+) -> (i32, i32, u32, u32) {
+    let dpr = if layout.dpr > 0.0 {
+        layout.dpr
+    } else if state.dpr > 0.0 {
+        state.dpr
+    } else {
+        1.0
+    };
+    let strip = overlay_strip_px(dpr);
+    let offset_left = (layout.offset_left * dpr).round() as i32;
+    let x = state.screen_x + offset_left;
+    match layout.placement.as_str() {
+        "top" => (x, state.screen_y - strip as i32, state.width, state.height + strip),
+        "bottom" => (x, state.screen_y, state.width, state.height + strip),
+        _ => (x, state.screen_y, state.width, state.height),
+    }
+}
+
+/// Whether the native overlay window already covers the selection plus toolbar strip.
+fn overlay_window_matches_state(
+    window: &Window,
+    state: &OverlayState,
+    layout: &OverlayToolbarLayout,
+) -> bool {
+    let (x, y, w, h) = overlay_window_rect_for(state, layout);
+    match (window.outer_position(), window.outer_size()) {
+        (Ok(pos), Ok(size)) => {
+            pos.x == x && pos.y == y && size.width == w && size.height == h
+        }
+        _ => false,
+    }
+}
+
 #[tauri::command]
 pub fn set_overlay_toolbar(
     window: Window,
@@ -1364,154 +1465,50 @@ pub fn set_overlay_toolbar(
 ) -> Result<OverlayToolbarLayout, String> {
     let mut toolbar = OVERLAY_TOOLBAR.lock().unwrap();
     let mut state_guard = OVERLAY_STATE.lock().unwrap();
-
-    if !visible {
-        if let Some(prev_layout) = toolbar.take() {
-            let resized_w =
-                OVERLAY_USER_RESIZED_W.swap(false, std::sync::atomic::Ordering::SeqCst);
-            let resized_h =
-                OVERLAY_USER_RESIZED_H.swap(false, std::sync::atomic::Ordering::SeqCst);
-            if let Some(state) = state_guard.as_mut() {
-                sync_state_from_window(&window, state, &prev_layout, resized_w, resized_h);
-                let _ = set_overlay_window_rect(
-                    &window,
-                    state.screen_x,
-                    state.screen_y,
-                    state.width,
-                    state.height,
-                );
-            }
-        } else {
-            OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
-            OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
-            if let Some(state) = state_guard.as_mut() {
-                let _ = set_overlay_window_rect(
-                    &window,
-                    state.screen_x,
-                    state.screen_y,
-                    state.width,
-                    state.height,
-                );
-            }
-        }
-
-        let (cw, ch, ww, wh, dpr) = state_guard
-            .as_ref()
-            .map(|s| {
-                let d = if s.dpr > 0.0 { s.dpr } else { 1.0 };
-                (s.width as f64 / d, s.height as f64 / d, s.width, s.height, d)
-            })
-            .unwrap_or((0.0, 0.0, 0, 0, 1.0));
-        return Ok(OverlayToolbarLayout {
-            placement: "none".to_string(),
-            offset_top: 0.0,
-            offset_left: 0.0,
-            content_width: cw,
-            content_height: ch,
-            window_width: ww,
-            window_height: wh,
-            dpr,
-        });
-    }
-
-    if let Some(layout) = toolbar.as_ref() {
-        return Ok(layout.clone());
-    }
-
-    OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
-    OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
-
+    let stored_layout = toolbar.clone();
     let state = state_guard
         .as_mut()
         .ok_or_else(|| "overlay state not found".to_string())?;
-    let dpr = window
-        .scale_factor()
-        .ok()
-        .filter(|v| *v > 0.0)
-        .unwrap_or(if state.dpr > 0.0 { state.dpr } else { 1.0 });
-    state.dpr = dpr;
 
-    let content_width = state.width as f64 / dpr;
-    let content_height = state.height as f64 / dpr;
-    let extra = (32.0 * dpr).round() as i32;
-    let min_toolbar_px = (320.0 * dpr).round() as u32;
+    if !visible {
+        // The toolbar strip was reserved when the window was created, so hiding
+        // the toolbar never moves or resizes the window. Only persist the drag /
+        // user-resize geometry into the selection for the next capture.
+        let resized_w = OVERLAY_USER_RESIZED_W.swap(false, std::sync::atomic::Ordering::SeqCst);
+        let resized_h = OVERLAY_USER_RESIZED_H.swap(false, std::sync::atomic::Ordering::SeqCst);
+        let prev_layout = stored_layout
+            .clone()
+            .unwrap_or_else(|| build_overlay_toolbar_layout(state));
+        sync_state_from_window(&window, state, &prev_layout, resized_w, resized_h);
 
-    let monitor = window
-        .current_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "overlay monitor not found".to_string())?;
-    let monitor_position = *monitor.position();
-    let monitor_size = monitor.size();
+        let layout = build_overlay_toolbar_layout(state);
+        let (x, y, w, h) = overlay_window_rect_for(state, &layout);
+        if !overlay_window_matches_state(&window, state, &layout) {
+            let _ = set_overlay_window_rect(&window, x, y, w, h);
+        }
+        *toolbar = Some(layout.clone());
+        return Ok(layout);
+    }
 
-    let win_width = state.width.max(min_toolbar_px).min(monitor_size.width);
-    let monitor_right = monitor_position.x + monitor_size.width as i32;
-    let win_x = if state.screen_x + win_width as i32 > monitor_right {
-        (monitor_right - win_width as i32).max(monitor_position.x)
-    } else {
-        state.screen_x.max(monitor_position.x)
-    };
-    let offset_left = (state.screen_x - win_x).max(0) as f64 / dpr;
+    // Showing the toolbar must not move or resize the native window: the strip
+    // already exists, so the transparent WebView never re-composites (no flash
+    // of the original screen) and the translation blocks never shift.
+    OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
+    if let Ok(dpr) = window.scale_factor() {
+        if dpr > 0.0 {
+            state.dpr = dpr;
+        }
+    }
 
-    let above = state.screen_y - extra >= monitor_position.y;
-    let below = state.screen_y + state.height as i32 + extra
-        <= monitor_position.y + monitor_size.height as i32;
-
-    let (layout, x, y, width, height) = if above {
-        let win_h = state.height + extra as u32;
-        (
-            OverlayToolbarLayout {
-                placement: "top".to_string(),
-                offset_top: 32.0,
-                offset_left,
-                content_width,
-                content_height,
-                window_width: win_width,
-                window_height: win_h,
-                dpr,
-            },
-            win_x,
-            state.screen_y - extra,
-            win_width,
-            win_h,
-        )
-    } else if below {
-        let win_h = state.height + extra as u32;
-        (
-            OverlayToolbarLayout {
-                placement: "bottom".to_string(),
-                offset_top: 0.0,
-                offset_left,
-                content_width,
-                content_height,
-                window_width: win_width,
-                window_height: win_h,
-                dpr,
-            },
-            win_x,
-            state.screen_y,
-            win_width,
-            win_h,
-        )
-    } else {
-        (
-            OverlayToolbarLayout {
-                placement: "inside".to_string(),
-                offset_top: 32.0,
-                offset_left,
-                content_width,
-                content_height: (content_height - 32.0).max(1.0),
-                window_width: win_width,
-                window_height: state.height,
-                dpr,
-            },
-            win_x,
-            state.screen_y,
-            win_width,
-            state.height,
-        )
-    };
-
-    set_overlay_window_rect(&window, x, y, width, height)?;
+    let layout = build_overlay_toolbar_layout(state);
+    // Safety net: if the window ever drifted from the selection plus strip
+    // (scale-factor change or a failed first apply), restore the exact bounds.
+    // A locked overlay is click-through, so this cannot fight a user drag.
+    if !overlay_window_matches_state(&window, state, &layout) {
+        let (x, y, w, h) = overlay_window_rect_for(state, &layout);
+        let _ = set_overlay_window_rect(&window, x, y, w, h);
+    }
     *toolbar = Some(layout.clone());
     Ok(layout)
 }
@@ -1576,8 +1573,10 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
     close_overlay_window(app_handle, true);
 
     let dpr = if state.dpr > 0.0 { state.dpr } else { 1.0 };
-    let logical_w = (state.width as f64 / dpr).max(1.0);
-    let logical_h = (state.height as f64 / dpr).max(1.0);
+    let layout = build_overlay_toolbar_layout(state);
+    let (win_x, win_y, win_w, win_h) = overlay_window_rect_for(state, &layout);
+    let logical_w = (win_w as f64 / dpr).max(1.0);
+    let logical_h = (win_h as f64 / dpr).max(1.0);
 
     let window = tauri::WindowBuilder::new(
         app_handle,
@@ -1600,7 +1599,6 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
 
     install_overlay_min_size_subclass(&window);
 
-    let window_for_resize = window.clone();
     window.on_window_event(move |event| {
         if let tauri::WindowEvent::Resized(size) = event {
             if OVERLAY_IN_SIZEMOVE.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1613,10 +1611,6 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
                 if next_w != prev_w || next_h != prev_h {
                     OVERLAY_USER_RESIZED_W.store(next_w, std::sync::atomic::Ordering::SeqCst);
                     OVERLAY_USER_RESIZED_H.store(next_h, std::sync::atomic::Ordering::SeqCst);
-                    let _ = window_for_resize.emit(
-                        "overlay_user_resized",
-                        serde_json::json!({ "width": next_w, "height": next_h }),
-                    );
                 }
             }
         }
@@ -1625,17 +1619,18 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
     window
         .set_ignore_cursor_events(true)
         .map_err(|e| e.to_string())?;
-    set_overlay_window_rect(&window, state.screen_x, state.screen_y, state.width, state.height)?;
+    set_overlay_window_rect(&window, win_x, win_y, win_w, win_h)?;
+    *OVERLAY_TOOLBAR.lock().unwrap() = Some(layout);
 
     #[cfg(target_os = "windows")]
     set_shadow(&window, false).unwrap_or_default();
 
     info!(
         "Overlay window geometry: requested ({}, {}) {}x{}, actual position {:?}, size {:?}",
-        state.screen_x,
-        state.screen_y,
-        state.width,
-        state.height,
+        win_x,
+        win_y,
+        win_w,
+        win_h,
         window.outer_position().ok(),
         window.outer_size().ok()
     );
@@ -1715,7 +1710,61 @@ fn overlay_target_language() -> String {
 
 #[cfg(test)]
 mod geometry_tests {
-    use super::{resolve_synced_content_rect, OverlayToolbarLayout};
+    use super::{
+        build_overlay_toolbar_layout, overlay_window_rect_for, pick_overlay_toolbar_placement,
+        resolve_synced_content_rect, OverlayState, OverlayToolbarLayout,
+    };
+
+    fn overlay_state(screen_y: i32, height: u32, placement: &str) -> OverlayState {
+        OverlayState {
+            left: 100,
+            top: 100,
+            width: 400,
+            height,
+            dpr: 1.0,
+            screen_x: 100,
+            screen_y,
+            monitor_x: 0,
+            monitor_y: 0,
+            padding_left: 8,
+            padding_top: 8,
+            toolbar_placement: placement.to_string(),
+            ocr_lang: "auto".to_string(),
+            service: String::new(),
+            model: String::new(),
+            target_lang: "zh_cn".to_string(),
+            ocr_service: "system".to_string(),
+            overlay_hotkey: String::new(),
+            overlay_refresh_hotkey: String::new(),
+        }
+    }
+
+    #[test]
+    fn toolbar_strip_is_reserved_above_or_below_the_selection() {
+        // Room above wins, then room below, otherwise the toolbar sits inside.
+        assert_eq!(pick_overlay_toolbar_placement(100, 200, 0, 1600, 1.0), "top");
+        assert_eq!(pick_overlay_toolbar_placement(10, 200, 0, 1600, 1.0), "bottom");
+        assert_eq!(pick_overlay_toolbar_placement(0, 1600, 0, 1600, 1.0), "inside");
+        // A 125% display reserves 40 physical px.
+        assert_eq!(pick_overlay_toolbar_placement(30, 100, 0, 800, 1.25), "bottom");
+
+        let top = overlay_state(100, 200, "top");
+        let top_layout = build_overlay_toolbar_layout(&top);
+        assert_eq!(top_layout.placement, "top");
+        assert_eq!(top_layout.offset_top, 32.0);
+        assert_eq!(top_layout.window_height, 232);
+        assert_eq!(overlay_window_rect_for(&top, &top_layout), (100, 68, 400, 232));
+
+        let bottom = overlay_state(100, 200, "bottom");
+        let bottom_layout = build_overlay_toolbar_layout(&bottom);
+        assert_eq!(bottom_layout.offset_top, 0.0);
+        assert_eq!(overlay_window_rect_for(&bottom, &bottom_layout), (100, 100, 400, 232));
+
+        let inside = overlay_state(0, 1600, "inside");
+        let inside_layout = build_overlay_toolbar_layout(&inside);
+        assert_eq!(inside_layout.placement, "inside");
+        assert_eq!(overlay_window_rect_for(&inside, &inside_layout), (100, 0, 400, 1600));
+    }
 
     #[test]
     fn resolve_synced_content_rect_preserves_narrow_bounds_unless_user_resized() {

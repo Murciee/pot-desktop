@@ -580,58 +580,31 @@ export function parseBatchTranslation(rawText, expectedCount) {
     return seen.size === expectedCount ? results : null;
 }
 
+/**
+ * The overlay window reserves a 32px strip for the toolbar at creation time
+ * (above or below the selected region, or inside it when there is no room).
+ * Toggling the toolbar therefore never moves or resizes the native window: the
+ * WebView is never re-composited (no flash of the original screen) and the
+ * translation blocks keep their exact pixel positions.
+ */
 export function computeOverlayContentRect({
-    state,
-    toolbarLayout,
     locked,
     viewport,
-    userResized,
+    placement = 'inside',
     toolbarHeight = 32,
 }) {
-    const dpr = toolbarLayout?.dpr > 0 ? toolbarLayout.dpr : state?.dpr > 0 ? state.dpr : 1;
     const vw = Math.max(1, Number(viewport?.width) || 1);
     const vh = Math.max(1, Number(viewport?.height) || 1);
-    const baseWidth = state ? state.width / dpr : vw;
-    const baseHeight = state ? state.height / dpr : vh;
-    const layout = toolbarLayout || {
-        placement: 'none',
-        offsetTop: 0,
-        offsetLeft: 0,
-        contentWidth: baseWidth,
-        contentHeight: baseHeight,
-        dpr,
-    };
-
-    const toolbarPlacement = layout.placement;
-    const toolbarAtBottom = toolbarPlacement === 'bottom';
-    const toolbarVisible = !locked && toolbarPlacement !== 'none';
-    const extraHeight = toolbarPlacement === 'top' || toolbarPlacement === 'bottom' ? toolbarHeight : 0;
-    const contentTop = layout.offsetTop ?? 0;
-    const contentLeft = layout.offsetLeft ?? 0;
-    const layoutContentWidth = Math.max(1, layout.contentWidth > 0 ? layout.contentWidth : baseWidth);
-    const layoutContentHeight = Math.max(1, layout.contentHeight > 0 ? layout.contentHeight : baseHeight);
-
-    const contentWidth =
-        !toolbarVisible || !userResized?.width
-            ? layoutContentWidth
-            : Math.max(1, vw - contentLeft);
-    const contentHeight =
-        !toolbarVisible || !userResized?.height
-            ? layoutContentHeight
-            : Math.max(
-                  1,
-                  toolbarPlacement === 'inside' ? vh - toolbarHeight : vh - extraHeight
-              );
+    const atTop = placement === 'top';
+    const atBottom = placement === 'bottom';
+    const strip = atTop || atBottom ? Math.max(0, Number(toolbarHeight) || 0) : 0;
 
     return {
-        dpr,
-        layout,
-        toolbarPlacement,
-        toolbarAtBottom,
-        toolbarVisible,
-        contentLeft,
-        contentTop,
-        contentWidth,
-        contentHeight,
+        toolbarAtBottom: atBottom,
+        toolbarVisible: !locked,
+        contentLeft: 0,
+        contentTop: atTop ? strip : 0,
+        contentWidth: vw,
+        contentHeight: Math.max(1, vh - strip),
     };
 }

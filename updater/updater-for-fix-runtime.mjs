@@ -1,6 +1,8 @@
 import fetch from 'node-fetch';
 import fs from 'fs';
 
+import { formatUpdaterNotes } from '../.scripts/extract-release-notes.mjs';
+
 const REPO = 'Murciee/pot-desktop';
 const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`;
 
@@ -24,7 +26,7 @@ async function resolveUpdater() {
 
     let updateData = {
         name: version,
-        notes: changelog,
+        notes: formatUpdaterNotes(version, changelog),
         pub_date: new Date().toISOString(),
         platforms: {
             'windows-x86_64': { signature: windows_x86_64_sig, url: windows_x86_64 },

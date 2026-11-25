@@ -1,3 +1,10 @@
+## 3.0.26 (2026-11-25)
+
+### Bugs fixed:
+
+-   Remove the Windows `SM_CXMIN`/`SM_CYMIN` minimum window size clamp on borderless overlay translation windows via a `WM_WINDOWPOSCHANGING` subclass and clamp normalized OCR boxes inside the selected region so small selections no longer expand.
+-   Display current and target version numbers in the in-app updater window and prepend version headers to updater manifests for older clients.
+
 ## 3.0.25 (2026-11-24)
 
 ### Bugs fixed:

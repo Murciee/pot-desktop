@@ -1055,11 +1055,11 @@ fn sync_state_from_window(
             0
         };
         let cw = if outer_size.width == layout.window_width {
-            (layout.content_width * dpr).round().max(20.0) as u32
+            (layout.content_width * dpr).round().max(1.0) as u32
         } else {
-            outer_size.width.max(20)
+            outer_size.width.max(1)
         };
-        let ch = outer_size.height.saturating_sub(extra_h_px).max(20);
+        let ch = outer_size.height.saturating_sub(extra_h_px).max(1);
         (
             outer_pos.x + extra_left_px,
             outer_pos.y + extra_top_px,
@@ -1070,8 +1070,8 @@ fn sync_state_from_window(
         (
             outer_pos.x,
             outer_pos.y,
-            outer_size.width.max(20),
-            outer_size.height.max(20),
+            outer_size.width.max(1),
+            outer_size.height.max(1),
         )
     };
 
@@ -1119,6 +1119,91 @@ pub fn sync_overlay_geometry(window: Window) -> Result<OverlayState, String> {
 }
 
 #[cfg(target_os = "windows")]
+const OVERLAY_MIN_SIZE_SUBCLASS_ID: usize = 0x504F_5401;
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn overlay_min_size_subclass_proc(
+    hwnd: windows::Win32::Foundation::HWND,
+    umsg: u32,
+    wparam: windows::Win32::Foundation::WPARAM,
+    lparam: windows::Win32::Foundation::LPARAM,
+    uidsubclass: usize,
+    _dwrefdata: usize,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::Foundation::LRESULT;
+    use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SWP_NOSIZE, WINDOWPOS, WM_NCDESTROY, WM_WINDOWPOSCHANGING,
+    };
+
+    match umsg {
+        WM_WINDOWPOSCHANGING => {
+            // Bypass DefWindowProcW's SM_CXMIN/SM_CYMIN clamp on WS_CAPTION windows
+            // so narrow or short overlay selections keep their exact pixel bounds.
+            if lparam.0 != 0 {
+                let wp = &mut *(lparam.0 as *mut WINDOWPOS);
+                if (wp.flags.0 & SWP_NOSIZE.0) == 0 {
+                    wp.cx = wp.cx.max(1);
+                    wp.cy = wp.cy.max(1);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_NCDESTROY => {
+            let _ = RemoveWindowSubclass(hwnd, Some(overlay_min_size_subclass_proc), uidsubclass);
+            DefSubclassProc(hwnd, umsg, wparam, lparam)
+        }
+        _ => DefSubclassProc(hwnd, umsg, wparam, lparam),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn install_overlay_min_size_subclass(window: &Window) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::Shell::SetWindowSubclass;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    let hwnd_isize = window.hwnd().map(|h| h.0 as isize).unwrap_or(0);
+    if hwnd_isize == 0 {
+        return;
+    }
+
+    let win_tid = unsafe {
+        GetWindowThreadProcessId(HWND(hwnd_isize as *mut core::ffi::c_void), None)
+    };
+    let cur_tid = unsafe { GetCurrentThreadId() };
+    if win_tid == cur_tid {
+        unsafe {
+            let _ = SetWindowSubclass(
+                HWND(hwnd_isize as *mut core::ffi::c_void),
+                Some(overlay_min_size_subclass_proc),
+                OVERLAY_MIN_SIZE_SUBCLASS_ID,
+                0,
+            );
+        }
+    } else if let Some(app_handle) = APP.get() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<()>(1);
+        if app_handle
+            .run_on_main_thread(move || {
+                unsafe {
+                    let _ = SetWindowSubclass(
+                        HWND(hwnd_isize as *mut core::ffi::c_void),
+                        Some(overlay_min_size_subclass_proc),
+                        OVERLAY_MIN_SIZE_SUBCLASS_ID,
+                        0,
+                    );
+                }
+                let _ = tx.send(());
+            })
+            .is_ok()
+        {
+            let _ = rx.recv_timeout(std::time::Duration::from_millis(500));
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn set_overlay_window_rect(
     window: &Window,
     x: i32,
@@ -1129,7 +1214,8 @@ fn set_overlay_window_rect(
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
         GetWindowLongW, SetWindowLongW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED,
-        SWP_NOACTIVATE, SWP_NOZORDER, WS_EX_CLIENTEDGE, WS_EX_STATICEDGE, WS_EX_WINDOWEDGE,
+        SWP_NOACTIVATE, SWP_NOSENDCHANGING, SWP_NOZORDER, WS_EX_CLIENTEDGE, WS_EX_STATICEDGE,
+        WS_EX_WINDOWEDGE,
     };
 
     let raw_hwnd = window.hwnd().map_err(|e| e.to_string())?;
@@ -1138,7 +1224,7 @@ fn set_overlay_window_rect(
 
     unsafe {
         let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        let mut flags = SWP_NOZORDER | SWP_NOACTIVATE;
+        let mut flags = SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOSENDCHANGING;
         if (ex_style & edge_mask) != 0 {
             SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style & !edge_mask);
             flags |= SWP_FRAMECHANGED;
@@ -1193,17 +1279,13 @@ pub fn set_overlay_toolbar(
                 );
             }
         } else if let Some(state) = state_guard.as_mut() {
-            if window.is_visible().unwrap_or(false) {
-                sync_state_from_window(&window, state, None);
-            } else {
-                let _ = set_overlay_window_rect(
-                    &window,
-                    state.screen_x,
-                    state.screen_y,
-                    state.width,
-                    state.height,
-                );
-            }
+            let _ = set_overlay_window_rect(
+                &window,
+                state.screen_x,
+                state.screen_y,
+                state.width,
+                state.height,
+            );
         }
 
         let (cw, ch, ww, wh) = state_guard
@@ -1393,6 +1475,7 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
     .build()
     .map_err(|e| e.to_string())?;
 
+    install_overlay_min_size_subclass(&window);
     set_overlay_window_rect(&window, state.screen_x, state.screen_y, state.width, state.height)?;
     window
         .set_ignore_cursor_events(true)
@@ -1475,12 +1558,115 @@ fn overlay_ocr_service() -> String {
 }
 
 fn overlay_target_language() -> String {
-    if let Some(lang) = get("overlay_target_language").and_then(|v| v.as_str().map(|s| s.to_string())) {
-        if !lang.is_empty() {
-            return lang;
+    get("overlay_target_language")
+        .and_then(|v| v.as_str().map(|s| s.to_string()))
+        .filter(|lang| !lang.is_empty())
+        .or_else(|| {
+            get("translate_target_language").and_then(|v| v.as_str().map(|s| s.to_string()))
+        })
+        .unwrap_or_else(|| "zh_cn".to_string())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::{overlay_min_size_subclass_proc, OVERLAY_MIN_SIZE_SUBCLASS_ID};
+
+    unsafe extern "system" fn test_wnd_proc(
+        hwnd: windows::Win32::Foundation::HWND,
+        msg: u32,
+        wparam: windows::Win32::Foundation::WPARAM,
+        lparam: windows::Win32::Foundation::LPARAM,
+    ) -> windows::Win32::Foundation::LRESULT {
+        use windows::Win32::Foundation::{LRESULT, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_NCCALCSIZE};
+
+        if msg == WM_NCCALCSIZE && wparam != WPARAM(0) {
+            return LRESULT(0);
+        }
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+
+    #[test]
+    fn overlay_subclass_allows_sub_cxmin_window_sizes() {
+        use windows::core::PCWSTR;
+        use windows::Win32::Foundation::{HINSTANCE, HWND, RECT};
+        use windows::Win32::UI::Shell::SetWindowSubclass;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, GetWindowRect, RegisterClassExW, SetWindowPos,
+            ShowWindow, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+            SW_SHOWNOACTIVATE, WNDCLASSEXW, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+            WS_EX_ACCEPTFILES, WS_EX_TOPMOST, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+            WS_SIZEBOX, WS_SYSMENU,
+        };
+
+        let class_name: Vec<u16> = "PotOverlayMinSizeTestCls\0".encode_utf16().collect();
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(test_wnd_proc),
+            hInstance: HINSTANCE::default(),
+            lpszClassName: PCWSTR::from_raw(class_name.as_ptr()),
+            ..Default::default()
+        };
+
+        unsafe {
+            let _ = RegisterClassExW(&wc);
+            let style = WS_CLIPSIBLINGS
+                | WS_CLIPCHILDREN
+                | WS_SYSMENU
+                | WS_CAPTION
+                | WS_SIZEBOX
+                | WS_MAXIMIZEBOX
+                | WS_MINIMIZEBOX;
+            let ex_style = WS_EX_ACCEPTFILES | WS_EX_WINDOWEDGE | WS_EX_TOPMOST;
+            let title: Vec<u16> = "Test\0".encode_utf16().collect();
+            let hwnd = CreateWindowExW(
+                ex_style,
+                PCWSTR::from_raw(class_name.as_ptr()),
+                PCWSTR::from_raw(title.as_ptr()),
+                style,
+                100,
+                100,
+                200,
+                200,
+                HWND::default(),
+                None,
+                HINSTANCE::default(),
+                None,
+            )
+            .expect("CreateWindowExW failed");
+            assert!(!hwnd.0.is_null(), "CreateWindowExW returned null HWND");
+
+            assert!(SetWindowSubclass(
+                hwnd,
+                Some(overlay_min_size_subclass_proc),
+                OVERLAY_MIN_SIZE_SUBCLASS_ID,
+                0,
+            )
+            .as_bool());
+
+            SetWindowPos(hwnd, HWND::default(), 100, 100, 42, 18, SWP_NOZORDER | SWP_NOACTIVATE)
+                .expect("SetWindowPos(42x18) failed");
+
+            // Simulate tao's apply_diff re-showing and refreshing the window frame.
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            SetWindowPos(
+                hwnd,
+                HWND::default(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_NOACTIVATE,
+            )
+            .expect("SetWindowPos(SWP_FRAMECHANGED) failed");
+
+            let mut rect = RECT::default();
+            GetWindowRect(hwnd, &mut rect).expect("GetWindowRect failed");
+            let width = rect.right - rect.left;
+            let height = rect.bottom - rect.top;
+
+            let _ = DestroyWindow(hwnd);
+            assert_eq!((width, height), (42, 18));
         }
     }
-    get("translate_target_language")
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_else(|| "zh_cn".to_string())
 }

@@ -377,6 +377,16 @@ export function normalizeBlocks(blocks, width, height, dpr) {
 
     return blocks.map((block, index) => {
         const vertical = Boolean(block.vertical);
+        const rawX = block.x / factor;
+        const rawY = block.y / factor;
+        const rawW = block.w / factor;
+        const rawH = block.h / factor;
+        const left = Math.max(0, Math.min(cssWidth, rawX));
+        const top = Math.max(0, Math.min(cssHeight, rawY));
+        const right = Math.max(left, Math.min(cssWidth, rawX + rawW));
+        const bottom = Math.max(top, Math.min(cssHeight, rawY + rawH));
+        const w = Math.max(Math.min(1, cssWidth - left), right - left);
+        const h = Math.max(Math.min(1, cssHeight - top), bottom - top);
         const axisSpan = vertical ? cssWidth : cssHeight;
         const nLineSize =
             Number.isFinite(block.lineSize) && block.lineSize > 0
@@ -387,10 +397,10 @@ export function normalizeBlocks(blocks, width, height, dpr) {
 
         return {
             id: index,
-            nx: block.x / factor / cssWidth,
-            ny: block.y / factor / cssHeight,
-            nw: block.w / factor / cssWidth,
-            nh: block.h / factor / cssHeight,
+            nx: left / cssWidth,
+            ny: top / cssHeight,
+            nw: w / cssWidth,
+            nh: h / cssHeight,
             text: block.text,
             vertical,
             nLineSize,

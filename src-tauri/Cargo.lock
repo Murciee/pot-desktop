@@ -4653,7 +4653,7 @@ dependencies = [
 
 [[package]]
 name = "pot"
-version = "3.0.25"
+version = "3.0.26"
 dependencies = [
  "arboard",
  "base64 0.22.1",

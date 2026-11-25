@@ -139,6 +139,35 @@ test('normalizeBlocks converts physical boxes to normalized ratios with orientat
     assert.equal(normalized[2].lineCount, null);
 });
 
+test('normalizeBlocks clamps padded out-of-bounds boxes into [0, 1] and preserves sub-20px selections', () => {
+    const clamped = normalizeBlocks(
+        [
+            { x: -12, y: -6, w: 80, h: 40, text: 'Overflow left/top' },
+            { x: 160, y: 80, w: 60, h: 40, text: 'Overflow right/bottom' },
+        ],
+        200,
+        100,
+        2
+    );
+    assert.equal(clamped[0].nx, 0);
+    assert.equal(clamped[0].ny, 0);
+    assert.ok(clamped[0].nx + clamped[0].nw <= 1);
+    assert.ok(clamped[0].ny + clamped[0].nh <= 1);
+    assert.ok(Math.abs(clamped[0].nw - 68 / 200) < 1e-6);
+    assert.ok(Math.abs(clamped[0].nh - 34 / 100) < 1e-6);
+
+    assert.ok(clamped[1].nx >= 0 && clamped[1].ny >= 0);
+    assert.ok(Math.abs(clamped[1].nx + clamped[1].nw - 1) < 1e-6);
+    assert.ok(Math.abs(clamped[1].ny + clamped[1].nh - 1) < 1e-6);
+
+    const tiny = normalizeBlocks([{ x: 0, y: 0, w: 14, h: 12, text: 'OK' }], 14, 12, 1);
+    assert.equal(tiny.length, 1);
+    assert.equal(tiny[0].nx, 0);
+    assert.equal(tiny[0].ny, 0);
+    assert.equal(tiny[0].nw, 1);
+    assert.equal(tiny[0].nh, 1);
+});
+
 test('computeBlockMaxFontSize matches original OCR line size and falls back safely for plain text', () => {
     assert.equal(
         computeBlockMaxFontSize({ blockWidth: 320, blockHeight: 48, vertical: false, lineSizePx: 48 }),

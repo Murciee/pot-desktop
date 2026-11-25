@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { extractReleaseNotes } from '../.scripts/extract-release-notes.mjs';
+import { extractReleaseNotes, formatUpdaterNotes } from '../.scripts/extract-release-notes.mjs';
+import { normalizeVersionLabel, stripLeadingVersionHeading } from '../src/utils/updater_notes.js';
 
 const SAMPLE_CHANGELOG = `## 3.0.25 (2026-11-24)
 
@@ -53,4 +54,27 @@ test('extractReleaseNotes extracts only the requested version and omits older ve
 
 test('extractReleaseNotes returns fallback when version is missing', () => {
     assert.equal(extractReleaseNotes(SAMPLE_CHANGELOG, '9.9.9'), 'Release 9.9.9');
+});
+
+test('formatUpdaterNotes prepends version heading when missing and avoids duplicating an existing heading', () => {
+    const bodyOnly = '-   Fix overlay window sizing.';
+    assert.equal(formatUpdaterNotes('3.0.26', bodyOnly), '## 3.0.26\n\n-   Fix overlay window sizing.');
+
+    const withHeading = '## 3.0.26 (2026-11-25)\n\n-   Fix overlay window sizing.';
+    assert.equal(formatUpdaterNotes('3.0.26', withHeading), withHeading);
+    assert.equal(formatUpdaterNotes('v3.0.26', ''), '## v3.0.26');
+});
+
+test('normalizeVersionLabel and stripLeadingVersionHeading handle both 3.0.25 and 3.0.26 manifest bodies', () => {
+    assert.equal(normalizeVersionLabel(' v3.0.26 '), '3.0.26');
+    assert.equal(normalizeVersionLabel(''), '');
+
+    const bodyWithoutHeading = '-   Fix overlay font direction and size matching.';
+    assert.equal(stripLeadingVersionHeading(bodyWithoutHeading, '3.0.25'), bodyWithoutHeading);
+
+    const bodyWithHeading = '## 3.0.26 (2026-11-25)\n\n-   Fix overlay window sizing.';
+    assert.equal(stripLeadingVersionHeading(bodyWithHeading, '3.0.26'), '-   Fix overlay window sizing.');
+
+    const headingOnly = '## v3.0.26';
+    assert.equal(stripLeadingVersionHeading(headingOnly, '3.0.26'), 'Release 3.0.26');
 });

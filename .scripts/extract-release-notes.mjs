@@ -58,6 +58,18 @@ export function extractReleaseNotes(changelogText, version) {
     return trimmed;
 }
 
+export function formatUpdaterNotes(version, changelog) {
+    const cleanVersion = String(version ?? '').trim();
+    const cleanBody = String(changelog ?? '').trim();
+    if (!cleanBody) {
+        return cleanVersion ? `## ${cleanVersion}` : '';
+    }
+    if (/^\s*#{1,2}\s+v?\d+\.\d+/i.test(cleanBody)) {
+        return cleanBody;
+    }
+    return cleanVersion ? `## ${cleanVersion}\n\n${cleanBody}` : cleanBody;
+}
+
 const isMain =
     process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 

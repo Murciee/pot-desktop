@@ -55,8 +55,10 @@ export const OverlayBlock = React.memo(function OverlayBlock({
 
     const left = contentLeft + block.nx * contentWidth;
     const top = contentTop + block.ny * contentHeight;
-    const blockWidth = Math.max(12, block.nw * contentWidth);
-    const blockHeight = Math.max(12, block.nh * contentHeight);
+    const maxAvailWidth = Math.max(1, contentLeft + contentWidth - left);
+    const maxAvailHeight = Math.max(1, contentTop + contentHeight - top);
+    const blockWidth = Math.min(maxAvailWidth, Math.max(1, block.nw * contentWidth));
+    const blockHeight = Math.min(maxAvailHeight, Math.max(1, block.nh * contentHeight));
     const vertical = Boolean(block.vertical);
 
     // Fit the 1.0x baseline size to the original OCR line size; explicit

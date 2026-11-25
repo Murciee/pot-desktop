@@ -297,18 +297,21 @@ export default function Overlay() {
     const extraHeight = toolbarPlacement === 'top' || toolbarPlacement === 'bottom' ? TOOLBAR_HEIGHT : 0;
     const contentTop = layout.offsetTop;
     const contentLeft = layout.offsetLeft ?? 0;
-    const contentWidth =
-        toolbarVisible &&
-        layout.windowWidth &&
-        (Math.abs(viewport.width - layout.windowWidth / dpr) <= 2 || viewport.width < contentLeft + 20)
-            ? layout.contentWidth
-            : Math.max(1, viewport.width - contentLeft);
-    const contentHeight = Math.max(
-        1,
-        toolbarPlacement === 'inside'
-            ? viewport.height - TOOLBAR_HEIGHT
-            : viewport.height - extraHeight
-    );
+    const contentWidth = !toolbarVisible
+        ? Math.max(1, toolbarLayout?.contentWidth > 0 ? toolbarLayout.contentWidth : baseWidth)
+        : toolbarLayout?.windowWidth &&
+            (Math.abs(viewport.width - layout.windowWidth / dpr) <= 2 || viewport.width < contentLeft + 20)
+          ? layout.contentWidth
+          : Math.max(1, viewport.width - contentLeft);
+    const contentHeight = !toolbarVisible
+        ? Math.max(1, toolbarLayout?.contentHeight > 0 ? toolbarLayout.contentHeight : baseHeight)
+        : Math.max(
+              1,
+              toolbarPlacement === 'inside'
+                  ? viewport.height - TOOLBAR_HEIGHT
+                  : viewport.height - extraHeight
+          );
+    const compactSelection = contentHeight < 28 || contentWidth < 72;
 
     const hasMultipleChannels = Array.isArray(translateServiceList) && translateServiceList.filter(Boolean).length > 1;
     const effectiveThemeMode = overlayTheme || 'auto';
@@ -410,6 +413,8 @@ export default function Overlay() {
                         top: `${contentTop}px`,
                         width: `${contentWidth}px`,
                         height: `${contentHeight}px`,
+                        boxSizing: 'border-box',
+                        overflow: 'hidden',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -423,9 +428,13 @@ export default function Overlay() {
                         style={{
                             background: 'rgba(24,24,27,0.9)',
                             color: '#fff',
-                            borderRadius: 6,
-                            padding: '4px 10px',
-                            fontSize: 12,
+                            borderRadius: compactSelection ? 4 : 6,
+                            padding: compactSelection ? '1px 4px' : '4px 10px',
+                            fontSize: compactSelection ? 10 : 12,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
                             boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
                         }}
                     >

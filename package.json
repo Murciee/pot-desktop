@@ -1,13 +1,17 @@
 {
     "name": "pot",
     "private": true,
-    "version": "3.0.27",
+    "version": "3.0.28",
     "type": "module",
     "scripts": {
         "dev": "vite",
         "build": "vite build",
         "preview": "vite preview",
         "tauri": "tauri",
+        "test:js": "node --test \"tests/*.test.mjs\"",
+        "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+        "check": "node --test \"tests/*.test.mjs\" && cargo test --manifest-path src-tauri/Cargo.toml && vite build",
+        "test:local": "powershell -NoProfile -ExecutionPolicy Bypass -File .scripts/test-local.ps1",
         "updater": "node updater/updater.mjs",
         "updater:fixRuntime": "node updater/updater-for-fix-runtime.mjs"
     },

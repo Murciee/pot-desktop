@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     computeBlockColors,
     computeBlockMaxFontSize,
+    computeOverlayContentRect,
     formatBatchPrompt,
     isBatchFriendlyService,
     joinLineText,
@@ -252,4 +253,132 @@ test('formatBatchPrompt and parseBatchTranslation handle multiline items and rej
     assert.equal(parseBatchTranslation('[[0]] ', 1), null);
     assert.equal(isBatchFriendlyService('ecdict'), false);
     assert.equal(isBatchFriendlyService('openai'), true);
+});
+
+test('computeOverlayContentRect preserves selection bounds when toolbar opens and only tracks active user resizes', () => {
+    const narrowState = { width: 131, height: 210, dpr: 1 };
+    const topToolbarLayout = {
+        placement: 'top',
+        offsetTop: 32,
+        offsetLeft: 0,
+        contentWidth: 131,
+        contentHeight: 210,
+        windowWidth: 320,
+        windowHeight: 242,
+        dpr: 1,
+    };
+
+    // Before viewport catches up or when viewport differs by >2px / DPI mismatch
+    const beforeViewportSync = computeOverlayContentRect({
+        state: narrowState,
+        toolbarLayout: topToolbarLayout,
+        locked: false,
+        viewport: { width: 131, height: 210 },
+        userResized: { width: false, height: false },
+    });
+    assert.equal(beforeViewportSync.contentWidth, 131);
+    assert.equal(beforeViewportSync.contentHeight, 210);
+
+    const afterToolbarWidens = computeOverlayContentRect({
+        state: narrowState,
+        toolbarLayout: topToolbarLayout,
+        locked: false,
+        viewport: { width: 320, height: 242 },
+        userResized: { width: false, height: false },
+    });
+    assert.equal(afterToolbarWidens.contentWidth, 131);
+    assert.equal(afterToolbarWidens.contentHeight, 210);
+
+    const mismatchedViewport = computeOverlayContentRect({
+        state: narrowState,
+        toolbarLayout: topToolbarLayout,
+        locked: false,
+        viewport: { width: 326, height: 248 },
+        userResized: { width: false, height: false },
+    });
+    assert.equal(mismatchedViewport.contentWidth, 131);
+    assert.equal(mismatchedViewport.contentHeight, 210);
+
+    // Tiny selection (42x18) when toolbar widens window to 320x50
+    const tinyRect = computeOverlayContentRect({
+        state: { width: 42, height: 18, dpr: 1 },
+        toolbarLayout: {
+            placement: 'top',
+            offsetTop: 32,
+            offsetLeft: 0,
+            contentWidth: 42,
+            contentHeight: 18,
+            windowWidth: 320,
+            windowHeight: 50,
+            dpr: 1,
+        },
+        locked: false,
+        viewport: { width: 320, height: 50 },
+        userResized: { width: false, height: false },
+    });
+    assert.equal(tinyRect.contentWidth, 42);
+    assert.equal(tinyRect.contentHeight, 18);
+
+    // Full-height 'inside' toolbar placement preserves layout.contentHeight
+    const insideRect = computeOverlayContentRect({
+        state: { width: 180, height: 1440, dpr: 1 },
+        toolbarLayout: {
+            placement: 'inside',
+            offsetTop: 32,
+            offsetLeft: 0,
+            contentWidth: 180,
+            contentHeight: 1408,
+            windowWidth: 320,
+            windowHeight: 1440,
+            dpr: 1,
+        },
+        locked: false,
+        viewport: { width: 320, height: 1440 },
+        userResized: { width: false, height: false },
+    });
+    assert.equal(insideRect.contentWidth, 180);
+    assert.equal(insideRect.contentHeight, 1408);
+
+    // Vertical-only user resize updates height from viewport while width stays pinned
+    const verticalResized = computeOverlayContentRect({
+        state: narrowState,
+        toolbarLayout: topToolbarLayout,
+        locked: false,
+        viewport: { width: 320, height: 300 },
+        userResized: { width: false, height: true },
+    });
+    assert.equal(verticalResized.contentWidth, 131);
+    assert.equal(verticalResized.contentHeight, 268);
+
+    // Horizontal + vertical user resize tracks viewport on both axes
+    const bothResized = computeOverlayContentRect({
+        state: narrowState,
+        toolbarLayout: { ...topToolbarLayout, offsetLeft: 20 },
+        locked: false,
+        viewport: { width: 400, height: 300 },
+        userResized: { width: true, height: true },
+    });
+    assert.equal(bothResized.contentWidth, 380);
+    assert.equal(bothResized.contentHeight, 268);
+
+    // Re-locking returns exact layout contentWidth / contentHeight
+    const relocked = computeOverlayContentRect({
+        state: narrowState,
+        toolbarLayout: {
+            placement: 'none',
+            offsetTop: 0,
+            offsetLeft: 0,
+            contentWidth: 131,
+            contentHeight: 210,
+            windowWidth: 131,
+            windowHeight: 210,
+            dpr: 1,
+        },
+        locked: true,
+        viewport: { width: 131, height: 210 },
+        userResized: { width: false, height: false },
+    });
+    assert.equal(relocked.toolbarVisible, false);
+    assert.equal(relocked.contentWidth, 131);
+    assert.equal(relocked.contentHeight, 210);
 });

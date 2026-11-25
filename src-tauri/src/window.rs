@@ -531,6 +531,7 @@ pub struct OverlayToolbarLayout {
     pub content_height: f64,
     pub window_width: u32,
     pub window_height: u32,
+    pub dpr: f64,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -583,6 +584,23 @@ static OVERLAY_PINNED: std::sync::atomic::AtomicBool =
 /// Temporarily ignore outside clicks while the overlay is hidden for a refresh.
 static OVERLAY_BUSY: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+
+static OVERLAY_USER_RESIZED_W: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+static OVERLAY_USER_RESIZED_H: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+static OVERLAY_IN_SIZEMOVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "windows")]
+static OVERLAY_SIZEMOVE_START_W: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+#[cfg(target_os = "windows")]
+static OVERLAY_SIZEMOVE_START_H: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
 
 #[cfg(target_os = "windows")]
 static OVERLAY_CLICK_HWND: std::sync::atomic::AtomicIsize =
@@ -723,6 +741,11 @@ fn spawn_overlay_click_watcher(window: &Window) {
     OVERLAY_CLOSE_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
     OVERLAY_PINNED.store(false, std::sync::atomic::Ordering::SeqCst);
     OVERLAY_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_IN_SIZEMOVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_SIZEMOVE_START_W.store(0, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_SIZEMOVE_START_H.store(0, std::sync::atomic::Ordering::SeqCst);
     *OVERLAY_TOOLBAR.lock().unwrap() = None;
 
     window.on_window_event(move |event| {
@@ -1003,10 +1026,55 @@ pub fn set_overlay_busy(busy: bool) {
     OVERLAY_BUSY.store(busy, std::sync::atomic::Ordering::SeqCst);
 }
 
+fn resolve_synced_content_rect(
+    state_w: u32,
+    state_h: u32,
+    outer_pos_x: i32,
+    outer_pos_y: i32,
+    outer_w: u32,
+    outer_h: u32,
+    dpr: f64,
+    layout: &OverlayToolbarLayout,
+    user_resized_w: bool,
+    user_resized_h: bool,
+) -> (i32, i32, u32, u32) {
+    let extra_top_px = if layout.placement == "top" {
+        (32.0 * dpr).round() as i32
+    } else {
+        0
+    };
+    let extra_left_px = (layout.offset_left * dpr).round() as i32;
+    let extra_h_px = if layout.placement == "top" || layout.placement == "bottom" {
+        (32.0 * dpr).round() as u32
+    } else {
+        0
+    };
+    let cw = if user_resized_w {
+        outer_w
+            .saturating_sub(extra_left_px.max(0) as u32)
+            .max(1)
+    } else {
+        state_w.max(1)
+    };
+    let ch = if user_resized_h {
+        outer_h.saturating_sub(extra_h_px).max(1)
+    } else {
+        state_h.max(1)
+    };
+    (
+        outer_pos_x + extra_left_px,
+        outer_pos_y + extra_top_px,
+        cw,
+        ch,
+    )
+}
+
 fn sync_state_from_window(
     window: &Window,
     state: &mut OverlayState,
-    active_toolbar: Option<&OverlayToolbarLayout>,
+    layout: &OverlayToolbarLayout,
+    user_resized_w: bool,
+    user_resized_h: bool,
 ) {
     let outer_pos = match window.outer_position() {
         Ok(p) => p,
@@ -1022,38 +1090,18 @@ fn sync_state_from_window(
         .filter(|v| *v > 0.0)
         .unwrap_or(if state.dpr > 0.0 { state.dpr } else { 1.0 });
 
-    let (content_x, content_y, content_w, content_h) = if let Some(layout) = active_toolbar {
-        let extra_top_px = if layout.placement == "top" {
-            (32.0 * dpr).round() as i32
-        } else {
-            0
-        };
-        let extra_left_px = (layout.offset_left * dpr).round() as i32;
-        let extra_h_px = if layout.placement == "top" || layout.placement == "bottom" {
-            (32.0 * dpr).round() as u32
-        } else {
-            0
-        };
-        let cw = if outer_size.width == layout.window_width {
-            (layout.content_width * dpr).round().max(1.0) as u32
-        } else {
-            outer_size.width.max(1)
-        };
-        let ch = outer_size.height.saturating_sub(extra_h_px).max(1);
-        (
-            outer_pos.x + extra_left_px,
-            outer_pos.y + extra_top_px,
-            cw,
-            ch,
-        )
-    } else {
-        (
-            outer_pos.x,
-            outer_pos.y,
-            outer_size.width.max(1),
-            outer_size.height.max(1),
-        )
-    };
+    let (content_x, content_y, content_w, content_h) = resolve_synced_content_rect(
+        state.width,
+        state.height,
+        outer_pos.x,
+        outer_pos.y,
+        outer_size.width,
+        outer_size.height,
+        dpr,
+        layout,
+        user_resized_w,
+        user_resized_h,
+    );
 
     let center_x = content_x + (content_w as i32) / 2;
     let center_y = content_y + (content_h as i32) / 2;
@@ -1094,7 +1142,11 @@ pub fn sync_overlay_geometry(window: Window) -> Result<OverlayState, String> {
     let state = guard
         .as_mut()
         .ok_or_else(|| "overlay state not found".to_string())?;
-    sync_state_from_window(&window, state, toolbar.as_ref());
+    if let Some(layout) = toolbar.as_ref() {
+        let resized_w = OVERLAY_USER_RESIZED_W.load(std::sync::atomic::Ordering::SeqCst);
+        let resized_h = OVERLAY_USER_RESIZED_H.load(std::sync::atomic::Ordering::SeqCst);
+        sync_state_from_window(&window, state, layout, resized_w, resized_h);
+    }
     Ok(state.clone())
 }
 
@@ -1110,13 +1162,22 @@ unsafe extern "system" fn overlay_min_size_subclass_proc(
     uidsubclass: usize,
     _dwrefdata: usize,
 ) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::Foundation::LRESULT;
+    use windows::Win32::Foundation::{LRESULT, RECT};
     use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass};
     use windows::Win32::UI::WindowsAndMessaging::{
-        SWP_NOSIZE, WINDOWPOS, WM_NCDESTROY, WM_WINDOWPOSCHANGING,
+        GetWindowRect, MINMAXINFO, SWP_NOSIZE, WINDOWPOS, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE,
+        WM_GETMINMAXINFO, WM_NCDESTROY, WM_WINDOWPOSCHANGING,
     };
 
     match umsg {
+        WM_GETMINMAXINFO => {
+            if lparam.0 != 0 {
+                let mmi = &mut *(lparam.0 as *mut MINMAXINFO);
+                mmi.ptMinTrackSize.x = 1;
+                mmi.ptMinTrackSize.y = 1;
+            }
+            LRESULT(0)
+        }
         WM_WINDOWPOSCHANGING => {
             // Bypass DefWindowProcW's SM_CXMIN/SM_CYMIN clamp on WS_CAPTION windows
             // so narrow or short overlay selections keep their exact pixel bounds.
@@ -1129,7 +1190,23 @@ unsafe extern "system" fn overlay_min_size_subclass_proc(
             }
             LRESULT(0)
         }
+        WM_ENTERSIZEMOVE => {
+            let mut rect = RECT::default();
+            if GetWindowRect(hwnd, &mut rect).is_ok() {
+                let w = (rect.right - rect.left).max(0) as u32;
+                let h = (rect.bottom - rect.top).max(0) as u32;
+                OVERLAY_SIZEMOVE_START_W.store(w, std::sync::atomic::Ordering::SeqCst);
+                OVERLAY_SIZEMOVE_START_H.store(h, std::sync::atomic::Ordering::SeqCst);
+            }
+            OVERLAY_IN_SIZEMOVE.store(true, std::sync::atomic::Ordering::SeqCst);
+            DefSubclassProc(hwnd, umsg, wparam, lparam)
+        }
+        WM_EXITSIZEMOVE => {
+            OVERLAY_IN_SIZEMOVE.store(false, std::sync::atomic::Ordering::SeqCst);
+            DefSubclassProc(hwnd, umsg, wparam, lparam)
+        }
         WM_NCDESTROY => {
+            OVERLAY_IN_SIZEMOVE.store(false, std::sync::atomic::Ordering::SeqCst);
             let _ = RemoveWindowSubclass(hwnd, Some(overlay_min_size_subclass_proc), uidsubclass);
             DefSubclassProc(hwnd, umsg, wparam, lparam)
         }
@@ -1184,8 +1261,8 @@ fn install_overlay_min_size_subclass(window: &Window) {
 }
 
 #[cfg(target_os = "windows")]
-fn set_overlay_window_rect(
-    window: &Window,
+fn apply_overlay_window_rect_on_thread(
+    hwnd: windows::Win32::Foundation::HWND,
     x: i32,
     y: i32,
     width: u32,
@@ -1198,8 +1275,6 @@ fn set_overlay_window_rect(
         WS_EX_WINDOWEDGE,
     };
 
-    let raw_hwnd = window.hwnd().map_err(|e| e.to_string())?;
-    let hwnd = HWND(raw_hwnd.0 as *mut core::ffi::c_void);
     let edge_mask = (WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE).0 as i32;
 
     unsafe {
@@ -1220,6 +1295,50 @@ fn set_overlay_window_rect(
         )
         .map_err(|e| e.to_string())
     }
+}
+
+#[cfg(target_os = "windows")]
+fn set_overlay_window_rect(
+    window: &Window,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::System::Threading::GetCurrentThreadId;
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+
+    let raw_hwnd = window.hwnd().map_err(|e| e.to_string())?;
+    let hwnd_isize = raw_hwnd.0 as isize;
+    let hwnd = HWND(hwnd_isize as *mut core::ffi::c_void);
+    let win_tid = unsafe { GetWindowThreadProcessId(hwnd, None) };
+    let cur_tid = unsafe { GetCurrentThreadId() };
+    if win_tid == cur_tid {
+        return apply_overlay_window_rect_on_thread(hwnd, x, y, width, height);
+    }
+
+    if let Some(app_handle) = APP.get() {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+        app_handle
+            .run_on_main_thread(move || {
+                let res = apply_overlay_window_rect_on_thread(
+                    HWND(hwnd_isize as *mut core::ffi::c_void),
+                    x,
+                    y,
+                    width,
+                    height,
+                );
+                let _ = tx.send(res);
+            })
+            .map_err(|e| e.to_string())?;
+        return match rx.recv_timeout(std::time::Duration::from_millis(500)) {
+            Ok(res) => res,
+            Err(_) => Err("Timed out waiting for main thread window rect update".to_string()),
+        };
+    }
+
+    apply_overlay_window_rect_on_thread(hwnd, x, y, width, height)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -1248,8 +1367,12 @@ pub fn set_overlay_toolbar(
 
     if !visible {
         if let Some(prev_layout) = toolbar.take() {
+            let resized_w =
+                OVERLAY_USER_RESIZED_W.swap(false, std::sync::atomic::Ordering::SeqCst);
+            let resized_h =
+                OVERLAY_USER_RESIZED_H.swap(false, std::sync::atomic::Ordering::SeqCst);
             if let Some(state) = state_guard.as_mut() {
-                sync_state_from_window(&window, state, Some(&prev_layout));
+                sync_state_from_window(&window, state, &prev_layout, resized_w, resized_h);
                 let _ = set_overlay_window_rect(
                     &window,
                     state.screen_x,
@@ -1258,23 +1381,27 @@ pub fn set_overlay_toolbar(
                     state.height,
                 );
             }
-        } else if let Some(state) = state_guard.as_mut() {
-            let _ = set_overlay_window_rect(
-                &window,
-                state.screen_x,
-                state.screen_y,
-                state.width,
-                state.height,
-            );
+        } else {
+            OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
+            OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
+            if let Some(state) = state_guard.as_mut() {
+                let _ = set_overlay_window_rect(
+                    &window,
+                    state.screen_x,
+                    state.screen_y,
+                    state.width,
+                    state.height,
+                );
+            }
         }
 
-        let (cw, ch, ww, wh) = state_guard
+        let (cw, ch, ww, wh, dpr) = state_guard
             .as_ref()
             .map(|s| {
                 let d = if s.dpr > 0.0 { s.dpr } else { 1.0 };
-                (s.width as f64 / d, s.height as f64 / d, s.width, s.height)
+                (s.width as f64 / d, s.height as f64 / d, s.width, s.height, d)
             })
-            .unwrap_or((0.0, 0.0, 0, 0));
+            .unwrap_or((0.0, 0.0, 0, 0, 1.0));
         return Ok(OverlayToolbarLayout {
             placement: "none".to_string(),
             offset_top: 0.0,
@@ -1283,6 +1410,7 @@ pub fn set_overlay_toolbar(
             content_height: ch,
             window_width: ww,
             window_height: wh,
+            dpr,
         });
     }
 
@@ -1290,12 +1418,19 @@ pub fn set_overlay_toolbar(
         return Ok(layout.clone());
     }
 
+    OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
+
     let state = state_guard
         .as_mut()
         .ok_or_else(|| "overlay state not found".to_string())?;
-    sync_state_from_window(&window, state, None);
+    let dpr = window
+        .scale_factor()
+        .ok()
+        .filter(|v| *v > 0.0)
+        .unwrap_or(if state.dpr > 0.0 { state.dpr } else { 1.0 });
+    state.dpr = dpr;
 
-    let dpr = if state.dpr > 0.0 { state.dpr } else { 1.0 };
     let content_width = state.width as f64 / dpr;
     let content_height = state.height as f64 / dpr;
     let extra = (32.0 * dpr).round() as i32;
@@ -1332,6 +1467,7 @@ pub fn set_overlay_toolbar(
                 content_height,
                 window_width: win_width,
                 window_height: win_h,
+                dpr,
             },
             win_x,
             state.screen_y - extra,
@@ -1349,6 +1485,7 @@ pub fn set_overlay_toolbar(
                 content_height,
                 window_width: win_width,
                 window_height: win_h,
+                dpr,
             },
             win_x,
             state.screen_y,
@@ -1365,6 +1502,7 @@ pub fn set_overlay_toolbar(
                 content_height: (content_height - 32.0).max(1.0),
                 window_width: win_width,
                 window_height: state.height,
+                dpr,
             },
             win_x,
             state.screen_y,
@@ -1424,6 +1562,11 @@ fn close_overlay_window(app_handle: &tauri::AppHandle, wait_until_gone: bool) {
     }
     OVERLAY_PINNED.store(false, std::sync::atomic::Ordering::SeqCst);
     OVERLAY_BUSY.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_USER_RESIZED_W.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_USER_RESIZED_H.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_IN_SIZEMOVE.store(false, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_SIZEMOVE_START_W.store(0, std::sync::atomic::Ordering::SeqCst);
+    OVERLAY_SIZEMOVE_START_H.store(0, std::sync::atomic::Ordering::SeqCst);
     *OVERLAY_TOOLBAR.lock().unwrap() = None;
 }
 
@@ -1456,10 +1599,33 @@ fn create_overlay_window(state: &OverlayState) -> Result<Window, String> {
     .map_err(|e| e.to_string())?;
 
     install_overlay_min_size_subclass(&window);
-    set_overlay_window_rect(&window, state.screen_x, state.screen_y, state.width, state.height)?;
+
+    let window_for_resize = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::Resized(size) = event {
+            if OVERLAY_IN_SIZEMOVE.load(std::sync::atomic::Ordering::SeqCst) {
+                let start_w = OVERLAY_SIZEMOVE_START_W.load(std::sync::atomic::Ordering::SeqCst);
+                let start_h = OVERLAY_SIZEMOVE_START_H.load(std::sync::atomic::Ordering::SeqCst);
+                let prev_w = OVERLAY_USER_RESIZED_W.load(std::sync::atomic::Ordering::SeqCst);
+                let prev_h = OVERLAY_USER_RESIZED_H.load(std::sync::atomic::Ordering::SeqCst);
+                let next_w = prev_w || (start_w > 0 && size.width != start_w);
+                let next_h = prev_h || (start_h > 0 && size.height != start_h);
+                if next_w != prev_w || next_h != prev_h {
+                    OVERLAY_USER_RESIZED_W.store(next_w, std::sync::atomic::Ordering::SeqCst);
+                    OVERLAY_USER_RESIZED_H.store(next_h, std::sync::atomic::Ordering::SeqCst);
+                    let _ = window_for_resize.emit(
+                        "overlay_user_resized",
+                        serde_json::json!({ "width": next_w, "height": next_h }),
+                    );
+                }
+            }
+        }
+    });
+
     window
         .set_ignore_cursor_events(true)
         .map_err(|e| e.to_string())?;
+    set_overlay_window_rect(&window, state.screen_x, state.screen_y, state.width, state.height)?;
 
     #[cfg(target_os = "windows")]
     set_shadow(&window, false).unwrap_or_default();
@@ -1547,6 +1713,41 @@ fn overlay_target_language() -> String {
         .unwrap_or_else(|| "zh_cn".to_string())
 }
 
+#[cfg(test)]
+mod geometry_tests {
+    use super::{resolve_synced_content_rect, OverlayToolbarLayout};
+
+    #[test]
+    fn resolve_synced_content_rect_preserves_narrow_bounds_unless_user_resized() {
+        let layout = OverlayToolbarLayout {
+            placement: "top".to_string(),
+            offset_top: 32.0,
+            offset_left: 0.0,
+            content_width: 131.0,
+            content_height: 210.0,
+            window_width: 320,
+            window_height: 242,
+            dpr: 1.0,
+        };
+
+        // Dragged without user resize, even if outer_w/outer_h differ from window_width/height
+        let rect = resolve_synced_content_rect(131, 210, 500, 300, 325, 245, 1.0, &layout, false, false);
+        assert_eq!(rect, (500, 332, 131, 210));
+
+        // Vertical-only user resize updates height while keeping narrow selection width
+        let rect_v = resolve_synced_content_rect(131, 210, 500, 300, 320, 340, 1.0, &layout, false, true);
+        assert_eq!(rect_v, (500, 332, 131, 308));
+
+        // Horizontal + vertical user resize updates both axes (accounting for offset_left)
+        let shifted_layout = OverlayToolbarLayout {
+            offset_left: 20.0,
+            ..layout.clone()
+        };
+        let rect_both = resolve_synced_content_rect(131, 210, 500, 300, 400, 340, 1.0, &shifted_layout, true, true);
+        assert_eq!(rect_both, (520, 332, 380, 308));
+    }
+}
+
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::{overlay_min_size_subclass_proc, OVERLAY_MIN_SIZE_SUBCLASS_ID};
@@ -1569,14 +1770,15 @@ mod tests {
     #[test]
     fn overlay_subclass_allows_sub_cxmin_window_sizes() {
         use windows::core::PCWSTR;
-        use windows::Win32::Foundation::{HINSTANCE, HWND, RECT};
+        use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, POINT, RECT, WPARAM};
         use windows::Win32::UI::Shell::SetWindowSubclass;
         use windows::Win32::UI::WindowsAndMessaging::{
-            CreateWindowExW, DestroyWindow, GetWindowRect, RegisterClassExW, SetWindowPos,
-            ShowWindow, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-            SW_SHOWNOACTIVATE, WNDCLASSEXW, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
-            WS_EX_ACCEPTFILES, WS_EX_TOPMOST, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_SIZEBOX, WS_SYSMENU,
+            CreateWindowExW, DestroyWindow, GetWindowLongW, GetWindowRect, RegisterClassExW,
+            SendMessageW, SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, MINMAXINFO,
+            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SW_SHOW,
+            SW_SHOWNOACTIVATE, WNDCLASSEXW, WM_GETMINMAXINFO, WS_CAPTION, WS_CLIPCHILDREN,
+            WS_CLIPSIBLINGS, WS_EX_ACCEPTFILES, WS_EX_TOPMOST, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
+            WS_MINIMIZEBOX, WS_SIZEBOX, WS_SYSMENU,
         };
 
         let class_name: Vec<u16> = "PotOverlayMinSizeTestCls\0".encode_utf16().collect();
@@ -1624,11 +1826,26 @@ mod tests {
             )
             .as_bool());
 
+            let mut mmi = MINMAXINFO {
+                ptMinTrackSize: POINT { x: 136, y: 39 },
+                ..Default::default()
+            };
+            SendMessageW(
+                hwnd,
+                WM_GETMINMAXINFO,
+                WPARAM(0),
+                LPARAM(&mut mmi as *mut MINMAXINFO as isize),
+            );
+            assert_eq!((mmi.ptMinTrackSize.x, mmi.ptMinTrackSize.y), (1, 1));
+
             SetWindowPos(hwnd, HWND::default(), 100, 100, 42, 18, SWP_NOZORDER | SWP_NOACTIVATE)
                 .expect("SetWindowPos(42x18) failed");
 
-            // Simulate tao's apply_diff re-showing and refreshing the window frame.
+            // Simulate tao's apply_diff re-showing and toggling WS_EX_WINDOWEDGE + SWP_FRAMECHANGED.
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            let cur_ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            SetWindowLongW(hwnd, GWL_EXSTYLE, cur_ex | WS_EX_WINDOWEDGE.0 as i32);
             SetWindowPos(
                 hwnd,
                 HWND::default(),

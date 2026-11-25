@@ -8,6 +8,7 @@ import { MdPushPin } from 'react-icons/md';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { setConfigValue } from '../../utils/store';
+import { computeOverlayContentRect } from '../../utils/overlay_layout';
 import { useConfig } from '../../hooks';
 import { OverlayBlock } from './OverlayBlock';
 import { OverlayStatusBar } from './OverlayStatusBar';
@@ -34,6 +35,7 @@ export default function Overlay() {
     const [locked, setLocked] = useState(true);
     const [pinned, setPinned] = useState(false);
     const [toolbarLayout, setToolbarLayout] = useState(null);
+    const [userResized, setUserResized] = useState({ width: false, height: false });
     const [fontScale, setFontScale] = useState(1);
     const [displayMode, setDisplayMode] = useState('translation');
     const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -117,15 +119,17 @@ export default function Overlay() {
     }, [state, toolbarLayout]);
 
     useEffect(() => {
-        appWindow.setIgnoreCursorEvents(locked).catch(() => {});
-        if (!locked) {
-            appWindow.setFocus().catch(() => {});
-        }
-    }, [locked]);
-
-    useEffect(() => {
         let cancelled = false;
-        const updateToolbar = async () => {
+        setUserResized({ width: false, height: false });
+        const syncLockAndToolbar = async () => {
+            try {
+                await appWindow.setIgnoreCursorEvents(locked);
+            } catch {
+                // Continue syncing toolbar layout even if cursor ignore fails.
+            }
+            if (cancelled) {
+                return;
+            }
             try {
                 const layout = await invoke('set_overlay_toolbar', { visible: !locked });
                 if (!cancelled) {
@@ -146,6 +150,7 @@ export default function Overlay() {
                                   offsetLeft: 0,
                                   contentWidth: width,
                                   contentHeight: height,
+                                  dpr,
                               }
                             : {
                                   placement: 'inside',
@@ -153,12 +158,16 @@ export default function Overlay() {
                                   offsetLeft: 0,
                                   contentWidth: width,
                                   contentHeight: Math.max(1, height - TOOLBAR_HEIGHT),
+                                  dpr,
                               }
                     );
                 }
             }
+            if (!cancelled && !locked) {
+                appWindow.setFocus().catch(() => {});
+            }
         };
-        updateToolbar();
+        void syncLockAndToolbar();
         return () => {
             cancelled = true;
         };
@@ -187,6 +196,7 @@ export default function Overlay() {
     useEffect(() => {
         let unlistenToggle = null;
         let unlistenRefresh = null;
+        let unlistenUserResized = null;
 
         void init();
 
@@ -200,10 +210,20 @@ export default function Overlay() {
         }).then((f) => {
             unlistenRefresh = f;
         });
+        listen('overlay_user_resized', (event) => {
+            const payload = event?.payload;
+            setUserResized({
+                width: Boolean(payload?.width),
+                height: Boolean(payload?.height),
+            });
+        }).then((f) => {
+            unlistenUserResized = f;
+        });
 
         return () => {
             unlistenToggle?.();
             unlistenRefresh?.();
+            unlistenUserResized?.();
         };
     }, [init]);
 
@@ -273,41 +293,22 @@ export default function Overlay() {
         appFallbackFont === 'default' || !appFallbackFont ? DEFAULT_FONT_STACK : `"${appFallbackFont}"`;
     const fontFamily = `${primaryFont},${fallbackFont}`;
 
-    const dpr = state?.dpr > 0 ? state.dpr : 1;
-    const baseWidth = state ? state.width / dpr : viewport.width;
-    const baseHeight = state ? state.height / dpr : viewport.height;
-    const layout = toolbarLayout || {
-        placement: 'none',
-        offsetTop: 0,
-        offsetLeft: 0,
-        contentWidth: baseWidth,
-        contentHeight: baseHeight,
-    };
-
-    const toolbarPlacement = layout.placement;
-    const toolbarAtBottom = toolbarPlacement === 'bottom';
-    const toolbarVisible = !locked && toolbarPlacement !== 'none';
+    const {
+        toolbarAtBottom,
+        toolbarVisible,
+        contentLeft,
+        contentTop,
+        contentWidth,
+        contentHeight,
+    } = computeOverlayContentRect({
+        state,
+        toolbarLayout,
+        locked,
+        viewport,
+        userResized,
+        toolbarHeight: TOOLBAR_HEIGHT,
+    });
     const statusBottom = toolbarAtBottom ? TOOLBAR_HEIGHT : 0;
-
-    // Derive live content dimensions from the actual viewport while preserving
-    // original selection size when the toolbar temporarily widens narrow regions.
-    const extraHeight = toolbarPlacement === 'top' || toolbarPlacement === 'bottom' ? TOOLBAR_HEIGHT : 0;
-    const contentTop = layout.offsetTop;
-    const contentLeft = layout.offsetLeft ?? 0;
-    const contentWidth = !toolbarVisible
-        ? Math.max(1, toolbarLayout?.contentWidth > 0 ? toolbarLayout.contentWidth : baseWidth)
-        : toolbarLayout?.windowWidth &&
-            (Math.abs(viewport.width - layout.windowWidth / dpr) <= 2 || viewport.width < contentLeft + 20)
-          ? layout.contentWidth
-          : Math.max(1, viewport.width - contentLeft);
-    const contentHeight = !toolbarVisible
-        ? Math.max(1, toolbarLayout?.contentHeight > 0 ? toolbarLayout.contentHeight : baseHeight)
-        : Math.max(
-              1,
-              toolbarPlacement === 'inside'
-                  ? viewport.height - TOOLBAR_HEIGHT
-                  : viewport.height - extraHeight
-          );
     const compactSelection = contentHeight < 28 || contentWidth < 72;
 
     const hasMultipleChannels = Array.isArray(translateServiceList) && translateServiceList.filter(Boolean).length > 1;

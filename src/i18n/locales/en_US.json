@@ -539,6 +539,8 @@
             "refresh": "Refresh",
             "lock": "Lock",
             "close": "Close",
+            "expand_toolbar": "Expand toolbar",
+            "collapse_toolbar": "Collapse toolbar",
             "original": "Original",
             "translation": "Translation",
             "font_smaller": "Decrease font size",

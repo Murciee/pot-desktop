@@ -580,6 +580,20 @@ export function parseBatchTranslation(rawText, expectedCount) {
     return seen.size === expectedCount ? results : null;
 }
 
+export function computeOverlayViewportFromState(state, fallbackViewport, toolbarHeight = 32) {
+    const width = Number(state?.width);
+    const height = Number(state?.height);
+    if (!(width > 0) || !(height > 0)) {
+        return fallbackViewport;
+    }
+    const dpr = Number(state?.dpr) > 0 ? Number(state.dpr) : 1;
+    const hasExternalToolbar = state.toolbarPlacement === 'top' || state.toolbarPlacement === 'bottom';
+    return {
+        width: width / dpr,
+        height: height / dpr + (hasExternalToolbar ? Math.max(0, Number(toolbarHeight) || 0) : 0),
+    };
+}
+
 /**
  * The overlay window reserves a 32px strip for the toolbar at creation time
  * (above or below the selected region, or inside it when there is no room).

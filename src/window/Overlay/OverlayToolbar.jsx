@@ -1,21 +1,15 @@
-import { appWindow } from '@tauri-apps/api/window';
+import { appWindow, currentMonitor, LogicalSize } from '@tauri-apps/api/window';
 import React from 'react';
 import {
     MdAdd,
     MdClose,
-    MdContentCopy,
-    MdContentCut,
-    MdCopyAll,
-    MdDarkMode,
-    MdLightMode,
+    MdExpandLess,
     MdLock,
+    MdMoreHoriz,
     MdOutlinePushPin,
     MdPushPin,
-    MdRefresh,
     MdRemove,
     MdSwapHoriz,
-    MdTextSnippet,
-    MdTonality,
     MdTranslate,
 } from 'react-icons/md';
 
@@ -64,27 +58,49 @@ function ToolButton({ title, onClick, active = false, disabled = false, children
 export function OverlayToolbar({
     t,
     toolbarAtBottom,
-    refreshing,
+    compactToolbar,
+    selectionWidth,
+    onExpandedChange,
     displayMode,
-    overlayTheme,
     pinned,
     hasMultipleChannels,
-    onRefresh,
-    onReselect,
     onSwitchChannel,
     onAdjustFont,
-    onCopyText,
     onToggleDisplayMode,
-    onCycleTheme,
     onTogglePin,
     onLock,
 }) {
-    const themeLabel =
-        overlayTheme === 'dark'
-            ? t('overlay.theme_dark')
-            : overlayTheme === 'light'
-              ? t('overlay.theme_light')
-              : t('overlay.theme_auto');
+    const [expanded, setExpanded] = React.useState(false);
+
+    const toggleExpanded = async (next) => {
+        if (next) {
+            onExpandedChange?.(true);
+        } else {
+            setExpanded(false);
+        }
+        let resized = false;
+        try {
+            const monitor = await currentMonitor();
+            const position = await appWindow.outerPosition();
+            const scaleFactor = monitor?.scaleFactor || (await appWindow.scaleFactor()) || 1;
+            const maxWidth = monitor
+                ? Math.max(
+                      selectionWidth,
+                      (monitor.position.x + monitor.size.width - position.x) / scaleFactor
+                  )
+                : 220;
+            const width = next ? Math.min(220, maxWidth) : selectionWidth;
+            await appWindow.setSize(new LogicalSize(Math.max(selectionWidth, width), window.innerHeight));
+            resized = true;
+        } catch {
+            // The expanded actions remain horizontally scrollable if native resizing is unavailable.
+        }
+        if (next) {
+            setExpanded(true);
+        } else if (resized) {
+            onExpandedChange?.(false);
+        }
+    };
 
     return (
         <div
@@ -118,68 +134,61 @@ export function OverlayToolbar({
                 }
             }}
         >
-            <ToolButton title={t('overlay.refresh')} onClick={onRefresh} disabled={refreshing}>
-                <MdRefresh size={16} />
-            </ToolButton>
-            <ToolButton title={t('overlay.reselect')} onClick={onReselect}>
-                <MdContentCut size={15} />
-            </ToolButton>
-            {hasMultipleChannels && (
-                <ToolButton title={t('overlay.switch_channel')} onClick={onSwitchChannel}>
-                    <MdSwapHoriz size={15} />
+            {compactToolbar && !expanded ? (
+                <ToolButton title={t('overlay.expand_toolbar')} onClick={() => toggleExpanded(true)}>
+                    <MdMoreHoriz size={16} />
                 </ToolButton>
+            ) : (
+                <>
+                    {compactToolbar && (
+                        <ToolButton title={t('overlay.collapse_toolbar')} onClick={() => toggleExpanded(false)}>
+                            <MdExpandLess size={16} />
+                        </ToolButton>
+                    )}
+                    {hasMultipleChannels && (
+                        <ToolButton title={t('overlay.switch_channel')} onClick={onSwitchChannel}>
+                            <MdSwapHoriz size={15} />
+                        </ToolButton>
+                    )}
+                    <ToolButton title={t('overlay.font_smaller')} onClick={() => onAdjustFont(-0.1)}>
+                        <MdRemove size={14} />
+                    </ToolButton>
+                    <ToolButton title={t('overlay.font_larger')} onClick={() => onAdjustFont(0.1)}>
+                        <MdAdd size={14} />
+                    </ToolButton>
+                    <ToolButton
+                        title={displayMode === 'original' ? t('overlay.show_translation') : t('overlay.show_original')}
+                        onClick={onToggleDisplayMode}
+                        active={displayMode === 'original'}
+                    >
+                        <MdTranslate size={15} />
+                    </ToolButton>
+                    <ToolButton
+                        title={pinned ? t('overlay.unpin') : t('overlay.pin')}
+                        onClick={onTogglePin}
+                        active={pinned}
+                    >
+                        {pinned ? <MdPushPin size={15} /> : <MdOutlinePushPin size={15} />}
+                    </ToolButton>
+                    <ToolButton title={t('overlay.lock')} onClick={onLock}>
+                        <MdLock size={15} />
+                    </ToolButton>
+                    <div
+                        style={{
+                            marginLeft: 'auto',
+                            position: 'sticky',
+                            right: 0,
+                            display: 'flex',
+                            background: 'rgba(24,24,27,0.92)',
+                            paddingLeft: 2,
+                        }}
+                    >
+                        <ToolButton title={t('overlay.close')} onClick={() => appWindow.close()}>
+                            <MdClose size={16} />
+                        </ToolButton>
+                    </div>
+                </>
             )}
-            <ToolButton title={t('overlay.font_smaller')} onClick={() => onAdjustFont(-0.1)}>
-                <MdRemove size={14} />
-            </ToolButton>
-            <ToolButton title={t('overlay.font_larger')} onClick={() => onAdjustFont(0.1)}>
-                <MdAdd size={14} />
-            </ToolButton>
-            <ToolButton title={t('overlay.copy_translation')} onClick={() => onCopyText('translation')}>
-                <MdContentCopy size={15} />
-            </ToolButton>
-            <ToolButton title={t('overlay.copy_original')} onClick={() => onCopyText('original')}>
-                <MdTextSnippet size={15} />
-            </ToolButton>
-            <ToolButton title={t('overlay.copy_all')} onClick={() => onCopyText('all')}>
-                <MdCopyAll size={15} />
-            </ToolButton>
-            <ToolButton
-                title={displayMode === 'original' ? t('overlay.show_translation') : t('overlay.show_original')}
-                onClick={onToggleDisplayMode}
-                active={displayMode === 'original'}
-            >
-                <MdTranslate size={15} />
-            </ToolButton>
-            <ToolButton title={themeLabel} onClick={onCycleTheme} active={overlayTheme !== 'auto'}>
-                {overlayTheme === 'dark' ? (
-                    <MdDarkMode size={15} />
-                ) : overlayTheme === 'light' ? (
-                    <MdLightMode size={15} />
-                ) : (
-                    <MdTonality size={15} />
-                )}
-            </ToolButton>
-            <ToolButton title={pinned ? t('overlay.unpin') : t('overlay.pin')} onClick={onTogglePin} active={pinned}>
-                {pinned ? <MdPushPin size={15} /> : <MdOutlinePushPin size={15} />}
-            </ToolButton>
-            <ToolButton title={t('overlay.lock')} onClick={onLock}>
-                <MdLock size={15} />
-            </ToolButton>
-            <div
-                style={{
-                    marginLeft: 'auto',
-                    position: 'sticky',
-                    right: 0,
-                    display: 'flex',
-                    background: 'rgba(24,24,27,0.92)',
-                    paddingLeft: 2,
-                }}
-            >
-                <ToolButton title={t('overlay.close')} onClick={() => appWindow.close()}>
-                    <MdClose size={16} />
-                </ToolButton>
-            </div>
         </div>
     );
 }

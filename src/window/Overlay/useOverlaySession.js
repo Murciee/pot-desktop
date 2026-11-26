@@ -71,7 +71,14 @@ function chunkTargetsForBatch(targets) {
     return chunks;
 }
 
-export function useOverlaySession({ t, translateServiceList, overlayConcurrency, setLocked }) {
+export function useOverlaySession({
+    t,
+    translateServiceList,
+    enabledChannels,
+    loadEnabledChannels,
+    overlayConcurrency,
+    setLocked,
+}) {
     const [state, setState] = useState(null);
     const [blocks, setBlocks] = useState([]);
     const [phase, setPhase] = useState('idle');
@@ -744,7 +751,18 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
         const tr = tRef.current;
         const latest = await loadLatestOverlayState();
         const currentState = latest || stateRef.current;
-        const list = Array.isArray(translateServiceList) ? translateServiceList.filter(Boolean) : [];
+        const allList = Array.isArray(translateServiceList) ? translateServiceList.filter(Boolean) : [];
+        // Only switched-on channels take part in the overlay channel cycle; the
+        // enable flags are re-read on demand so toggling them in settings while
+        // this overlay stays open is honoured.
+        let list = Array.isArray(enabledChannels) ? enabledChannels.filter(Boolean) : allList;
+        if (typeof loadEnabledChannels === 'function') {
+            try {
+                list = await loadEnabledChannels();
+            } catch (e) {
+                logError(`[overlay] refresh channel list failed: ${e?.toString?.() ?? String(e)}`);
+            }
+        }
         if (!currentState || list.length === 0) {
             setStatus({ kind: 'no_service', message: tr('overlay.no_service') });
             setLocked(false);
@@ -776,7 +794,15 @@ export function useOverlaySession({ t, translateServiceList, overlayConcurrency,
         const allTranslated =
             blocksRef.current.length > 0 && blocksRef.current.every((b) => !b.error && b.translated);
         await retryFailed(next, { forceAll: allTranslated });
-    }, [loadLatestOverlayState, retryFailed, setLocked, showNotice, translateServiceList]);
+    }, [
+        enabledChannels,
+        loadEnabledChannels,
+        loadLatestOverlayState,
+        retryFailed,
+        setLocked,
+        showNotice,
+        translateServiceList,
+    ]);
 
     const refresh = useCallback(async () => {
         if (busyRef.current) {

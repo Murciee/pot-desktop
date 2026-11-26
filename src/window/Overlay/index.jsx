@@ -7,8 +7,8 @@ import { error as logError } from 'tauri-plugin-log-api';
 import { MdPushPin } from 'react-icons/md';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { setConfigValue } from '../../utils/store';
-import { computeOverlayContentRect } from '../../utils/overlay_layout';
+import { setConfigValue, store } from '../../utils/store';
+import { computeOverlayContentRect, computeOverlayViewportFromState } from '../../utils/overlay_layout';
 import { useConfig } from '../../hooks';
 import { OverlayBlock } from './OverlayBlock';
 import { OverlayStatusBar } from './OverlayStatusBar';
@@ -16,7 +16,6 @@ import { OverlayToolbar } from './OverlayToolbar';
 import { useOverlaySession } from './useOverlaySession';
 
 const TOOLBAR_HEIGHT = 32;
-const THEME_CYCLE = ['auto', 'light', 'dark'];
 const DEFAULT_FONT_STACK =
     '"Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Noto Sans CJK SC","Segoe UI",system-ui,sans-serif';
 
@@ -26,7 +25,7 @@ export default function Overlay() {
     const [overlayOpacity] = useConfig('overlay_opacity', 0.85);
     const [overlayFontScale] = useConfig('overlay_font_scale', 1);
     const [overlayConcurrency] = useConfig('overlay_max_concurrency', 3);
-    const [overlayTheme, setOverlayTheme] = useConfig('overlay_theme', 'auto');
+    const [overlayTheme] = useConfig('overlay_theme', 'auto');
     const [translateServiceList] = useConfig('translate_service_list', []);
     const [appFontSize] = useConfig('app_font_size', 16);
     const [appFont] = useConfig('app_font', 'default');
@@ -34,6 +33,8 @@ export default function Overlay() {
 
     const [locked, setLocked] = useState(true);
     const [pinned, setPinned] = useState(false);
+    const [toolbarExpanded, setToolbarExpanded] = useState(false);
+    const [enabledChannels, setEnabledChannels] = useState(null);
     const [fontScale, setFontScale] = useState(1);
     const [displayMode, setDisplayMode] = useState('translation');
     const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
@@ -43,9 +44,40 @@ export default function Overlay() {
     const fontSaveTimerRef = useRef(null);
     fontScaleRef.current = fontScale;
 
+    const loadEnabledChannels = useCallback(async () => {
+        const list = Array.isArray(translateServiceList) ? translateServiceList.filter(Boolean) : [];
+        const enabled = [];
+        for (const instanceKey of list) {
+            let config = {};
+            try {
+                config = (await store.get(instanceKey)) ?? {};
+            } catch (e) {
+                logError(`[overlay] read service config failed: ${e?.toString?.() ?? String(e)}`);
+            }
+            if (config['enable'] ?? true) {
+                enabled.push(instanceKey);
+            }
+        }
+        return enabled;
+    }, [translateServiceList]);
+
+    useEffect(() => {
+        let disposed = false;
+        void loadEnabledChannels().then((enabled) => {
+            if (!disposed) {
+                setEnabledChannels(enabled);
+            }
+        });
+        return () => {
+            disposed = true;
+        };
+    }, [loadEnabledChannels]);
+
     const session = useOverlaySession({
         t,
         translateServiceList,
+        enabledChannels,
+        loadEnabledChannels,
         overlayConcurrency,
         setLocked,
     });
@@ -54,7 +86,6 @@ export default function Overlay() {
         state,
         blocks,
         phase,
-        refreshing,
         status,
         setStatus,
         copyNotice,
@@ -132,6 +163,16 @@ export default function Overlay() {
             } catch (e) {
                 logError(`[overlay] toolbar sync failed: ${e?.toString?.() ?? String(e)}`);
             }
+            if (!cancelled) {
+                try {
+                    const latest = await invoke('refresh_overlay_state');
+                    if (!cancelled) {
+                        setState(latest);
+                    }
+                } catch (e) {
+                    logError(`[overlay] geometry refresh failed: ${e?.toString?.() ?? String(e)}`);
+                }
+            }
             if (!cancelled && !locked) {
                 appWindow.setFocus().catch(() => {});
             }
@@ -141,6 +182,15 @@ export default function Overlay() {
             cancelled = true;
         };
     }, [locked]);
+
+    useEffect(() => {
+        if (!locked || !state) {
+            return;
+        }
+        invoke('set_overlay_toolbar', { visible: false }).catch((e) => {
+            logError(`[overlay] locked geometry sync failed: ${e?.toString?.() ?? String(e)}`);
+        });
+    }, [locked, state?.width, state?.height, state?.toolbarPlacement, phase, blocks.length, status?.kind]);
 
     useEffect(() => {
         const onKeyDown = (event) => {
@@ -213,15 +263,6 @@ export default function Overlay() {
         });
     }, []);
 
-    const cycleTheme = useCallback(() => {
-        const current = overlayTheme || 'auto';
-        const next = THEME_CYCLE[(THEME_CYCLE.indexOf(current) + 1) % THEME_CYCLE.length];
-        setOverlayTheme(next);
-        setConfigValue('overlay_theme', next).catch((e) =>
-            logError(`[overlay] save theme failed: ${e?.toString?.() ?? String(e)}`)
-        );
-    }, [overlayTheme, setOverlayTheme]);
-
     const openSettings = useCallback(async () => {
         if (!pinned) {
             setPinned(true);
@@ -260,14 +301,21 @@ export default function Overlay() {
         contentHeight,
     } = computeOverlayContentRect({
         locked,
-        viewport,
+        viewport:
+            locked || toolbarExpanded
+                ? computeOverlayViewportFromState(state, viewport, TOOLBAR_HEIGHT)
+                : viewport,
         placement: state?.toolbarPlacement || 'inside',
         toolbarHeight: TOOLBAR_HEIGHT,
     });
     const statusBottom = toolbarAtBottom ? TOOLBAR_HEIGHT : 0;
-    const compactSelection = contentHeight < 28 || contentWidth < 72;
+    // Keep the loading chip out of small selections: at high DPI even a
+    // 168×60 physical-pixel selection is only 84×30 CSS px and cannot
+    // comfortably contain the recognition/translation label.
+    const compactSelection = contentHeight < 48 || contentWidth < 144;
+    const compactToolbar = contentWidth < 190 || contentHeight < TOOLBAR_HEIGHT;
 
-    const hasMultipleChannels = Array.isArray(translateServiceList) && translateServiceList.filter(Boolean).length > 1;
+    const hasMultipleChannels = Array.isArray(enabledChannels) && enabledChannels.filter(Boolean).length > 1;
     const effectiveThemeMode = overlayTheme || 'auto';
 
     const readyBlockCount = blocks.filter((b) => Boolean(b.translated) || Boolean(b.error)).length;
@@ -299,22 +347,24 @@ export default function Overlay() {
                 <OverlayToolbar
                     t={t}
                     toolbarAtBottom={toolbarAtBottom}
-                    refreshing={refreshing}
+                    compactToolbar={compactToolbar}
+                    selectionWidth={
+                        Number(state?.width) > 0
+                            ? Number(state.width) / (Number(state.dpr) > 0 ? Number(state.dpr) : 1)
+                            : contentWidth
+                    }
+                    onExpandedChange={setToolbarExpanded}
                     displayMode={displayMode}
-                    overlayTheme={effectiveThemeMode}
                     pinned={pinned}
                     hasMultipleChannels={hasMultipleChannels}
-                    onRefresh={() => refreshRef.current?.()}
-                    onReselect={reselect}
                     onSwitchChannel={switchChannel}
                     onAdjustFont={adjustFont}
-                    onCopyText={copyText}
                     onToggleDisplayMode={() =>
                         setDisplayMode((mode) => (mode === 'original' ? 'translation' : 'original'))
                     }
-                    onCycleTheme={cycleTheme}
                     onTogglePin={togglePin}
                     onLock={() => {
+                        setToolbarExpanded(false);
                         flushFontScaleSave();
                         setLocked(true);
                     }}
@@ -378,22 +428,39 @@ export default function Overlay() {
                         zIndex: 8,
                     }}
                 >
-                    <span
-                        style={{
-                            background: 'rgba(24,24,27,0.9)',
-                            color: '#fff',
-                            borderRadius: compactSelection ? 4 : 6,
-                            padding: compactSelection ? '1px 4px' : '4px 10px',
-                            fontSize: compactSelection ? 10 : 12,
-                            maxWidth: '100%',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
-                        }}
-                    >
-                        {loadingLabel}
-                    </span>
+                    {compactSelection ? (
+                        <span
+                            aria-label={loadingLabel}
+                            title={loadingLabel}
+                            style={{
+                                width: 6,
+                                height: 6,
+                                flex: '0 0 6px',
+                                borderRadius: '50%',
+                                background: 'rgba(56,189,248,0.95)',
+                                boxShadow: '0 0 6px rgba(56,189,248,0.65)',
+                            }}
+                        />
+                    ) : (
+                        <span
+                            style={{
+                                minWidth: 0,
+                                maxWidth: 'calc(100% - 8px)',
+                                boxSizing: 'border-box',
+                                background: 'rgba(24,24,27,0.9)',
+                                color: '#fff',
+                                borderRadius: 6,
+                                padding: '4px 10px',
+                                fontSize: 12,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.28)',
+                            }}
+                        >
+                            {loadingLabel}
+                        </span>
+                    )}
                 </div>
             )}
             <OverlayStatusBar

@@ -5,6 +5,7 @@ import {
     computeBlockColors,
     computeBlockMaxFontSize,
     computeOverlayContentRect,
+    computeOverlayViewportFromState,
     formatBatchPrompt,
     isBatchFriendlyService,
     joinLineText,
@@ -305,4 +306,21 @@ test('computeOverlayContentRect maps the reserved toolbar strip and keeps conten
     });
     assert.equal(degenerate.contentWidth, 1);
     assert.equal(degenerate.contentHeight, 1);
+});
+
+test('computeOverlayViewportFromState keeps a small loading overlay aligned to the selected physical rect', () => {
+    const viewport = computeOverlayViewportFromState(
+        { width: 148, height: 80, dpr: 2, toolbarPlacement: 'top' },
+        { width: 1440, height: 900 }
+    );
+    assert.deepEqual(viewport, { width: 74, height: 72 });
+
+    const content = computeOverlayContentRect({
+        locked: true,
+        viewport,
+        placement: 'top',
+    });
+    assert.equal(content.contentWidth, 74);
+    assert.equal(content.contentHeight, 40);
+    assert.equal(content.contentTop, 32);
 });

@@ -539,6 +539,8 @@
             "refresh": "刷新",
             "lock": "锁定",
             "close": "关闭",
+            "expand_toolbar": "展开工具栏",
+            "collapse_toolbar": "收起工具栏",
             "original": "原文",
             "translation": "译文",
             "font_smaller": "减小字号",
